@@ -27,4 +27,8 @@ export const authController = {
     return ok(res, null, 'Logged out');
   }),
   me: asyncHandler(async (req, res) => ok(res, { user: req.user.toJSON() })),
+  verifyEmail: asyncHandler(async (req, res) => {
+    await authService.verifyEmail(req.body.token);
+    return ok(res, {}, 'Email verified');
+  }),
 };
