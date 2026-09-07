@@ -25,3 +25,17 @@ MongoDB instance. Use a real MongoDB URI when persistent local data is needed.
 - `POST /api/profiles/me/onboarding`
 - `GET /api/profiles/talent`
 - `GET /api/profiles/:userId`
+
+## Verification and trust endpoints
+
+Verification is human-reviewed. A CV analyzer or other automated feature can never approve a request or grant a badge.
+
+- `GET /api/verification/status`
+- `POST /api/verification/email/resend` and `POST /api/auth/verify-email`
+- `POST /api/verification/phone/send` and `POST /api/verification/phone/verify`
+- `POST|GET|DELETE /api/verification/requests`
+- Admin only: `GET /api/verification/admin/requests`, `POST /api/verification/admin/requests/:id/decision`
+
+Verification documents are private files under `.runtime/`; only an authenticated administrator can download a submitted document. Development email and phone confirmations return one-time values so the flow can be demonstrated without mail or SMS infrastructure.
+
+To provision a local reviewer without exposing an admin registration endpoint, set `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` in your untracked `.env`, then run `npm run bootstrap:admin`. This command requires `MONGODB_URI` and is never run automatically.
