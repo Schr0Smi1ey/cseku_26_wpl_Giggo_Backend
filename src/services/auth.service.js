@@ -4,8 +4,15 @@ import { RefreshToken } from '../models/RefreshToken.js';
 import { User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { createRefreshToken, hashToken, signAccessToken } from '../utils/tokens.js';
+import { syncUserBadges } from './verification.badges.js';
 
 const refreshDurationMs = config.jwt.refreshTtlDays * 24 * 60 * 60 * 1000;
+const emailVerificationTtlMs = 24 * 60 * 60 * 1000;
+
+function createEmailVerificationToken() {
+  const raw = crypto.randomBytes(32).toString('hex');
+  return { raw, hash: crypto.createHash('sha256').update(raw).digest('hex') };
+}
 
 async function issueSession(user, family = crypto.randomUUID()) {
   const { raw, hash } = createRefreshToken();
@@ -79,5 +86,32 @@ export const authService = {
   async logout(rawToken) {
     if (!rawToken) return;
     await RefreshToken.updateOne({ tokenHash: hashToken(rawToken), revokedAt: null }, { revokedAt: new Date() });
+  },
+
+  async resendEmailVerification(user) {
+    if (user.emailVerified) throw ApiError.badRequest('Email is already verified');
+    const { raw, hash } = createEmailVerificationToken();
+    user.emailVerificationTokenHash = hash;
+    user.emailVerificationExpiresAt = new Date(Date.now() + emailVerificationTtlMs);
+    await user.save();
+    // Email delivery is deliberately not configured for the course MVP. In non-production,
+    // return a single-use token so the complete flow is testable without a mail provider.
+    return { sent: true, devVerifyToken: config.isProduction ? undefined : raw };
+  },
+
+  async verifyEmail(rawToken) {
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const user = await User.findOne({
+      emailVerificationTokenHash: tokenHash,
+    }).select('+emailVerificationTokenHash +emailVerificationExpiresAt');
+    if (!user || !user.emailVerificationExpiresAt || user.emailVerificationExpiresAt <= new Date()) {
+      throw ApiError.badRequest('Invalid or expired verification token');
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationTokenHash = '';
+    user.emailVerificationExpiresAt = undefined;
+    await user.save();
+    await syncUserBadges(user._id);
   },
 };

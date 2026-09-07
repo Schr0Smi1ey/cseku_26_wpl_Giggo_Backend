@@ -82,6 +82,14 @@ const freelancerProfileSchema = new Schema(
     visibility: { type: String, enum: ['public', 'private'], default: 'private', index: true },
     completeness: { type: Number, min: 0, max: 100, default: 0 },
     onboardingCompleted: { type: Boolean, default: false },
+    // This public cache is written only by the human-review verification service.
+    verificationState: {
+      type: String,
+      enum: ['UNVERIFIED', 'DOCUMENT_VERIFIED', 'VERIFIED'],
+      default: 'UNVERIFIED',
+      index: true,
+    },
+    badges: { type: [String], default: [] },
   },
   { timestamps: true, versionKey: false },
 );
