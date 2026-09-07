@@ -20,4 +20,8 @@ export class ApiError extends Error {
   static conflict(message = 'A record with this value already exists') {
     return new ApiError(409, message, 'CONFLICT');
   }
+
+  static notFound(message = 'Resource not found') {
+    return new ApiError(404, message, 'NOT_FOUND');
+  }
 }
