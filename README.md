@@ -17,3 +17,11 @@ MongoDB instance. Use a real MongoDB URI when persistent local data is needed.
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+
+## Phase 2 endpoints
+
+- `GET /api/profiles/me`
+- `PATCH /api/profiles/me`
+- `POST /api/profiles/me/onboarding`
+- `GET /api/profiles/talent`
+- `GET /api/profiles/:userId`
