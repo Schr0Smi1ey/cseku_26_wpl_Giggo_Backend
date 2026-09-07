@@ -19,7 +19,8 @@ export const config = {
   isProduction,
   isTest,
   port: numberFromEnv('PORT', 5000),
-  mongoUri: process.env.MONGODB_URI || '',
+  // Tests must never use the developer's configured Atlas database.
+  mongoUri: isTest ? process.env.TEST_MONGODB_URI || '' : process.env.MONGODB_URI || '',
   clientOrigins,
   bcryptCost: numberFromEnv('BCRYPT_COST', 12),
   jwt: {
