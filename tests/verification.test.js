@@ -5,8 +5,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-access-secret';
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 process.env.UPLOAD_DIR = path.join(process.cwd(), '.test-runtime');
 
 const { createApp } = await import('../src/app.js');
@@ -17,11 +16,20 @@ const { RefreshToken } = await import('../src/models/RefreshToken.js');
 const { User, ROLES } = await import('../src/models/User.js');
 const { VerificationRequest } = await import('../src/models/VerificationRequest.js');
 const { resetVerificationTestState } = await import('../src/services/verification.service.js');
+const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
+
+const claimsByToken = new Map();
+setSupabaseTokenVerifierForTests(async (token) => {
+  const claims = claimsByToken.get(token);
+  if (!claims) throw new Error('Unknown test token');
+  return claims;
+});
 
 const app = createApp();
 
 before(async () => connectDB());
 beforeEach(async () => {
+  claimsByToken.clear();
   resetVerificationTestState();
   await Promise.all([
     VerificationRequest.deleteMany({}),
@@ -38,19 +46,36 @@ after(async () => {
 });
 
 async function register(role, email) {
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: `${role} verification tester`, email, password: 'StrongPass1', role })
-    .expect(201);
-  return { token: response.body.data.accessToken, user: response.body.data.user };
+  const token = `supabase-test-${email}`;
+  claimsByToken.set(token, {
+    sub: `id-${email}`,
+    email,
+    email_confirmed_at: new Date().toISOString(),
+    user_metadata: { name: `${role} verification tester`, signup_role: role },
+  });
+  const response = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+  return { token, user: response.body.data.user };
 }
 
 async function createAdminToken() {
-  const admin = new User({ name: 'Giggo Reviewer', email: 'reviewer@example.com', role: ROLES.ADMIN, roles: [ROLES.ADMIN] });
-  await admin.setPassword('StrongPass1');
-  await admin.save();
-  const login = await request(app).post('/api/auth/login').send({ email: admin.email, password: 'StrongPass1' }).expect(200);
-  return login.body.data.accessToken;
+  const supabaseUserId = 'admin-reviewer-id';
+  await User.create({
+    name: 'Giggo Reviewer',
+    email: 'reviewer@example.com',
+    role: ROLES.ADMIN,
+    roles: [ROLES.ADMIN],
+    authProvider: 'supabase',
+    supabaseUserId,
+    emailVerified: true,
+  });
+  const token = 'supabase-test-admin';
+  claimsByToken.set(token, {
+    sub: supabaseUserId,
+    email: 'reviewer@example.com',
+    email_confirmed_at: new Date().toISOString(),
+    user_metadata: { name: 'Giggo Reviewer', signup_role: 'freelancer' },
+  });
+  return token;
 }
 
 async function completeFreelancerOnboarding(token) {
@@ -70,13 +95,9 @@ async function completeFreelancerOnboarding(token) {
     .expect(200);
 }
 
-test('freelancers can verify email and phone without a third-party provider', async () => {
+test('confirmed Supabase email and phone verification produce the correct trust badges', async () => {
   const { token } = await register('freelancer', 'verification.signals@example.com');
   await request(app).get('/api/profiles/me').set('Authorization', `Bearer ${token}`).expect(200);
-
-  const email = await request(app).post('/api/verification/email/resend').set('Authorization', `Bearer ${token}`).expect(200);
-  assert.ok(email.body.data.devVerifyToken);
-  await request(app).post('/api/auth/verify-email').send({ token: email.body.data.devVerifyToken }).expect(200);
 
   const sent = await request(app).post('/api/verification/phone/send').set('Authorization', `Bearer ${token}`).send({ phone: '+880 1712 345678' }).expect(200);
   assert.match(sent.body.data.devCode, /^\d{6}$/);
