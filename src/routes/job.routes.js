@@ -1,0 +1,17 @@
+import { Router } from 'express';
+import { optionalAuth, requireAuth, requireRole } from '../middlewares/auth.js';
+import { ROLES } from '../models/User.js';
+import { validate } from '../middlewares/validate.js';
+import { jobController } from '../controllers/job.controller.js';
+import { createJobSchema, idSchema, listJobsSchema, mineJobsSchema, updateJobSchema } from '../validators/job.validators.js';
+const router = Router(); const params = (schema) => (req, _res, next) => { const result = schema.safeParse(req.params); if (!result.success) return next(result.error); req.params = result.data; return next(); }; const query = (schema) => (req, _res, next) => { const result = schema.safeParse(req.query); if (!result.success) return next(result.error); req.query = result.data; return next(); };
+router.get('/', query(listJobsSchema), jobController.list);
+router.get('/mine', requireAuth, requireRole(ROLES.CLIENT), query(mineJobsSchema), jobController.mine);
+router.get('/saved', requireAuth, requireRole(ROLES.FREELANCER), query(mineJobsSchema), jobController.saved);
+router.post('/', requireAuth, requireRole(ROLES.CLIENT), validate(createJobSchema), jobController.create);
+router.post('/:id/save', requireAuth, requireRole(ROLES.FREELANCER), params(idSchema), jobController.save);
+router.delete('/:id/save', requireAuth, requireRole(ROLES.FREELANCER), params(idSchema), jobController.unsave);
+router.patch('/:id', requireAuth, requireRole(ROLES.CLIENT), params(idSchema), validate(updateJobSchema), jobController.update);
+router.delete('/:id', requireAuth, requireRole(ROLES.CLIENT), params(idSchema), jobController.remove);
+router.get('/:id', optionalAuth, params(idSchema), jobController.get);
+export default router;

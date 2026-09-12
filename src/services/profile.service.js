@@ -1,4 +1,7 @@
 import mongoose from 'mongoose';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { ClientProfile } from '../models/ClientProfile.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { ROLES } from '../models/User.js';
@@ -70,6 +73,31 @@ export const profileService = {
     if (type === 'freelancer' && patch.visibility === undefined) profile.visibility = 'public';
     await profile.save();
     return { profile, type };
+  },
+
+  async uploadCv(user, file) {
+    if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can upload a CV');
+    if (!file?.buffer) throw ApiError.badRequest('Attach a CV document');
+    const { profile } = await getOrCreate(user);
+    const root = process.env.UPLOAD_DIR || path.resolve('.runtime', 'cvs');
+    const extension = path.extname(file.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
+    const key = `${user._id}-${crypto.randomUUID()}${extension}`;
+    await fs.mkdir(root, { recursive: true });
+    const storageKey = path.join(root, key);
+    await fs.writeFile(storageKey, file.buffer, { flag: 'wx' });
+    if (profile.cv?.storageKey) await fs.unlink(profile.cv.storageKey).catch(() => {});
+    profile.cv = { filename: path.basename(file.originalname || 'cv'), mimeType: file.mimetype, size: file.size, storageKey, uploadedAt: new Date() };
+    await profile.save();
+    return { profile, type: 'freelancer' };
+  },
+
+  async removeCv(user) {
+    if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can remove a CV');
+    const { profile } = await getOrCreate(user);
+    if (profile.cv?.storageKey) await fs.unlink(profile.cv.storageKey).catch(() => {});
+    profile.cv = { filename: '', mimeType: '', size: 0, storageKey: '', uploadedAt: null };
+    await profile.save();
+    return { profile, type: 'freelancer' };
   },
 
   async getPublicFreelancer(userId) {
