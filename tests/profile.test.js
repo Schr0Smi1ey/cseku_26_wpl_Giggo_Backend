@@ -3,7 +3,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-access-secret';
+process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
@@ -11,21 +11,34 @@ const { ClientProfile } = await import('../src/models/ClientProfile.js');
 const { FreelancerProfile } = await import('../src/models/FreelancerProfile.js');
 const { RefreshToken } = await import('../src/models/RefreshToken.js');
 const { User } = await import('../src/models/User.js');
+const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
+
+const claimsByToken = new Map();
+setSupabaseTokenVerifierForTests(async (token) => {
+  const claims = claimsByToken.get(token);
+  if (!claims) throw new Error('Unknown test token');
+  return claims;
+});
 
 const app = createApp();
 
 before(async () => connectDB());
 beforeEach(async () => {
+  claimsByToken.clear();
   await Promise.all([User.deleteMany({}), RefreshToken.deleteMany({}), FreelancerProfile.deleteMany({}), ClientProfile.deleteMany({})]);
 });
 after(async () => disconnectDB());
 
 async function register(role, email) {
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: `${role} account`, email, password: 'StrongPass1', role })
-    .expect(201);
-  return { token: response.body.data.accessToken, user: response.body.data.user };
+  const token = `supabase-test-${email}`;
+  claimsByToken.set(token, {
+    sub: `id-${email}`,
+    email,
+    email_confirmed_at: new Date().toISOString(),
+    user_metadata: { name: `${role} account`, signup_role: role },
+  });
+  const response = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+  return { token, user: response.body.data.user };
 }
 
 const freelancerOnboarding = {
