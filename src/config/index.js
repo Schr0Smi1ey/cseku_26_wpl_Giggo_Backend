@@ -26,7 +26,12 @@ export const config = {
   bcryptCost: numberFromEnv('BCRYPT_COST', 12),
   storage: {
     verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
+    cvMaxFileMb: numberFromEnv('CV_MAX_FILE_MB', 10),
     uploadDir: process.env.UPLOAD_DIR || '',
+  },
+  ai: {
+    // Keep analysis provider-agnostic. The default is deterministic and does not send CV data to a third party.
+    provider: process.env.AI_PROVIDER || 'heuristic',
   },
   supabase: {
     url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
