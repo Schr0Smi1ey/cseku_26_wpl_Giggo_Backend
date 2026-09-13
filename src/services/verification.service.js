@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { VerificationRequest } from '../models/VerificationRequest.js';
 import { ApiError } from '../utils/ApiError.js';
-import { authService } from './auth.service.js';
 import { approvedTypesFor, deriveBadges, syncUserBadges } from './verification.badges.js';
 import { readVerificationDocument, removeVerificationDocument, storeVerificationDocument } from './verification.storage.service.js';
 
@@ -32,10 +31,6 @@ export const verificationService = {
       badges: derived.badges,
       requests: requests.map((request) => request.toJSON()),
     };
-  },
-
-  async resendEmail(user) {
-    return authService.resendEmailVerification(user);
   },
 
   async sendPhoneCode(user, { phone } = {}) {

@@ -21,11 +21,15 @@ export const config = {
   port: numberFromEnv('PORT', 5000),
   // Tests must never use the developer's configured Atlas database.
   mongoUri: isTest ? process.env.TEST_MONGODB_URI || '' : process.env.MONGODB_URI || '',
+  mongoDbName: isTest ? undefined : process.env.MONGODB_DB_NAME || undefined,
   clientOrigins,
   bcryptCost: numberFromEnv('BCRYPT_COST', 12),
   storage: {
     verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
     uploadDir: process.env.UPLOAD_DIR || '',
+  },
+  supabase: {
+    url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
   },
   jwt: {
     accessSecret: process.env.JWT_SECRET || (isTest ? 'test-access-secret' : 'dev-access-secret-change-me'),

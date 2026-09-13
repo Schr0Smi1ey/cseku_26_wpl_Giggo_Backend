@@ -20,7 +20,6 @@ const verificationLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, sta
 router.use(requireAuth);
 
 router.get('/status', requireRole(ROLES.FREELANCER), verificationController.status);
-router.post('/email/resend', requireRole(ROLES.FREELANCER), verificationLimiter, verificationController.resendEmail);
 router.post('/phone/send', requireRole(ROLES.FREELANCER), verificationLimiter, validatePhone, verificationController.sendPhone);
 router.post('/phone/verify', requireRole(ROLES.FREELANCER), validatePhoneCode, verificationController.verifyPhone);
 router.post('/requests', requireRole(ROLES.FREELANCER), uploadVerificationDocuments, handleUploadError, validateVerificationRequest, verificationController.submitRequest);
