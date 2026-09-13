@@ -3,67 +3,73 @@ import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-access-secret';
-process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
-const { RefreshToken } = await import('../src/models/RefreshToken.js');
 const { User } = await import('../src/models/User.js');
+const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
+
+const claimsByToken = new Map();
+setSupabaseTokenVerifierForTests(async (token) => {
+  const claims = claimsByToken.get(token);
+  if (!claims) throw new Error('Unknown test token');
+  return claims;
+});
 
 const app = createApp();
 
+function tokenFor({ id, email, name = 'Giggo User', role = 'freelancer' }) {
+  const token = `supabase-test-${id}`;
+  claimsByToken.set(token, {
+    sub: id,
+    email,
+    user_metadata: { name, signup_role: role },
+  });
+  return token;
+}
+
 before(async () => connectDB());
 beforeEach(async () => {
-  await Promise.all([User.deleteMany({}), RefreshToken.deleteMany({})]);
+  claimsByToken.clear();
+  await User.deleteMany({});
 });
 after(async () => disconnectDB());
 
-const client = { name: 'Giggo Client', email: 'client@example.com', password: 'StrongPass1', role: 'client' };
-const freelancer = { name: 'Giggo Freelancer', email: 'freelancer@example.com', password: 'StrongPass1', role: 'freelancer' };
+test('a verified Supabase session provisions a MongoDB user without a local password', async () => {
+  const token = tokenFor({ id: 'user-1', email: 'freelancer@example.com', name: 'Giggo Freelancer' });
+  const response = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
 
-test('register creates a client session without exposing a password hash', async () => {
-  const response = await request(app).post('/api/auth/register').send(client).expect(201);
-  assert.equal(response.body.success, true);
-  assert.equal(response.body.data.user.email, client.email);
-  assert.equal(response.body.data.user.role, 'client');
+  assert.equal(response.body.data.user.email, 'freelancer@example.com');
+  assert.equal(response.body.data.user.role, 'freelancer');
+  assert.equal(response.body.data.user.emailVerified, true);
   assert.equal('passwordHash' in response.body.data.user, false);
-  assert.match(response.headers['set-cookie'][0], /refreshToken=/);
+
+  const user = await User.findOne({ email: 'freelancer@example.com' }).select('+passwordHash');
+  assert.equal(user.authProvider, 'supabase');
+  assert.equal(user.supabaseUserId, 'user-1');
+  assert.equal(user.passwordHash, undefined);
 });
 
-test('registration rejects duplicate email and invalid roles', async () => {
-  await request(app).post('/api/auth/register').send(client).expect(201);
-  await request(app).post('/api/auth/register').send(client).expect(409);
-  await request(app)
-    .post('/api/auth/register')
-    .send({ ...freelancer, email: 'other@example.com', role: 'admin' })
-    .expect(400);
+test('untrusted signup metadata cannot create an admin and existing MongoDB roles are retained', async () => {
+  const token = tokenFor({ id: 'user-2', email: 'new@example.com', role: 'admin' });
+  const created = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+  assert.equal(created.body.data.user.role, 'freelancer');
+
+  await User.create({
+    name: 'Existing Client',
+    email: 'existing@example.com',
+    role: 'client',
+    roles: ['client'],
+    passwordHash: 'legacy-hash',
+  });
+  const existingToken = tokenFor({ id: 'user-3', email: 'existing@example.com', role: 'freelancer' });
+  const linked = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${existingToken}`).expect(200);
+  assert.equal(linked.body.data.user.role, 'client');
+  assert.equal(linked.body.data.user.supabaseUserId, 'user-3');
 });
 
-test('login, protected identity, refresh rotation, and logout work together', async () => {
-  await request(app).post('/api/auth/register').send(freelancer).expect(201);
-  await request(app).post('/api/auth/login').send({ email: freelancer.email, password: 'WrongPass1' }).expect(401);
-
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ email: freelancer.email, password: 'StrongPass1' })
-    .expect(200);
-  const accessToken = login.body.data.accessToken;
-  const cookie = login.headers['set-cookie'][0].split(';')[0];
-
-  const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).expect(200);
-  assert.equal(me.body.data.user.role, 'freelancer');
-
-  const refreshed = await request(app).post('/api/auth/refresh').set('Cookie', cookie).expect(200);
-  assert.equal(typeof refreshed.body.data.accessToken, 'string');
-  const nextCookie = refreshed.headers['set-cookie'][0].split(';')[0];
-  assert.notEqual(nextCookie, cookie);
-
-  await request(app).post('/api/auth/logout').set('Cookie', nextCookie).expect(200);
-  await request(app).post('/api/auth/refresh').set('Cookie', nextCookie).expect(401);
-});
-
-test('protected identity rejects missing or invalid access tokens', async () => {
+test('protected identity rejects missing and invalid Supabase sessions', async () => {
   await request(app).get('/api/auth/me').expect(401);
   await request(app).get('/api/auth/me').set('Authorization', 'Bearer invalid-token').expect(401);
 });

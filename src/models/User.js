@@ -8,7 +8,11 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 100 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-    passwordHash: { type: String, required: true, select: false },
+    // Legacy password hashes remain only for existing custom-auth accounts.
+    // New accounts authenticate through Supabase and therefore have no local password.
+    passwordHash: { type: String, select: false },
+    authProvider: { type: String, enum: ['legacy', 'supabase'], default: 'legacy', required: true },
+    supabaseUserId: { type: String, unique: true, sparse: true, trim: true },
     role: { type: String, enum: Object.values(ROLES), required: true },
     roles: { type: [String], enum: Object.values(ROLES), required: true },
     phone: { type: String, trim: true, maxlength: 20, default: '' },

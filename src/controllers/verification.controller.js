@@ -4,7 +4,6 @@ import { verificationService } from '../services/verification.service.js';
 
 export const verificationController = {
   status: asyncHandler(async (req, res) => ok(res, await verificationService.getStatus(req.user))),
-  resendEmail: asyncHandler(async (req, res) => ok(res, await verificationService.resendEmail(req.user), 'Verification email sent')),
   sendPhone: asyncHandler(async (req, res) => ok(res, await verificationService.sendPhoneCode(req.user, req.body), 'Verification code sent')),
   verifyPhone: asyncHandler(async (req, res) => ok(res, await verificationService.verifyPhoneCode(req.user, req.body), 'Phone verified')),
   submitRequest: asyncHandler(async (req, res) => {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node ./node_modules/nodemon/bin/nodemon.js src/server.js",
     "start": "node src/server.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "bootstrap:admin": "node scripts/bootstrap-admin.js"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
+    "jose": "^6.2.12",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "multer": "^2.3.0",
