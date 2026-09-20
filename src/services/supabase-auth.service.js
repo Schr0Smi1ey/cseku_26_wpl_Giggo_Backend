@@ -68,6 +68,9 @@ export async function verifySupabaseAccessToken(token) {
 }
 
 export async function syncSupabaseUser(identity) {
+  // The duplicate-key recovery below only works after MongoDB has finished
+  // creating the unique email and Supabase identity indexes.
+  await User.init();
   let user = await User.findOne({ supabaseUserId: identity.supabaseUserId });
   if (!user) {
     user = await User.findOne({ email: identity.email });
