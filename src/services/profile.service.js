@@ -1,4 +1,7 @@
 import mongoose from 'mongoose';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { ClientProfile } from '../models/ClientProfile.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { ROLES } from '../models/User.js';
@@ -6,6 +9,11 @@ import { ApiError } from '../utils/ApiError.js';
 
 const freelancerFields = ['title', 'overview', 'category', 'hourlyRate', 'availability', 'skills', 'languages', 'location', 'links', 'education', 'experience', 'certifications', 'portfolio', 'visibility'];
 const clientFields = ['companyName', 'companyDescription', 'industry', 'website', 'teamSize', 'location'];
+const cvExtensions = new Map([
+  ['application/pdf', '.pdf'],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
+  ['text/plain', '.txt'],
+]);
 
 function profileTypeFor(user) {
   if (user.role === ROLES.FREELANCER) return 'freelancer';
@@ -70,6 +78,48 @@ export const profileService = {
     if (type === 'freelancer' && patch.visibility === undefined) profile.visibility = 'public';
     await profile.save();
     return { profile, type };
+  },
+
+  async uploadCv(user, file) {
+    if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can upload a CV');
+    if (!file?.buffer) throw ApiError.badRequest('Attach a CV document');
+
+    const extension = cvExtensions.get(file.mimetype);
+    if (!extension) throw ApiError.badRequest('Only PDF, DOCX, and TXT CV files are accepted');
+
+    const { profile } = await getOrCreate(user);
+    const root = process.env.UPLOAD_DIR || path.resolve('.runtime', 'cvs');
+    const storageKey = path.join(root, `${user._id}-${crypto.randomUUID()}${extension}`);
+    await fs.mkdir(root, { recursive: true });
+    await fs.writeFile(storageKey, file.buffer, { flag: 'wx' });
+
+    const previousKey = profile.cv?.storageKey;
+    profile.cv = {
+      filename: path.basename(file.originalname || `cv${extension}`),
+      mimeType: file.mimetype,
+      size: file.size,
+      storageKey,
+      uploadedAt: new Date(),
+    };
+
+    try {
+      await profile.save();
+    } catch (error) {
+      await fs.unlink(storageKey).catch(() => {});
+      throw error;
+    }
+    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    return { profile, type: 'freelancer' };
+  },
+
+  async removeCv(user) {
+    if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can remove a CV');
+    const { profile } = await getOrCreate(user);
+    const previousKey = profile.cv?.storageKey;
+    profile.cv = { filename: '', mimeType: '', size: 0, storageKey: '', uploadedAt: null };
+    await profile.save();
+    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    return { profile, type: 'freelancer' };
   },
 
   async getPublicFreelancer(userId) {
