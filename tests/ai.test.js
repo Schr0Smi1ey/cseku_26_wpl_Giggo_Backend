@@ -14,8 +14,11 @@ process.env.UPLOAD_DIR = uploadDir;
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
 const { AIAnalysis } = await import('../src/models/AIAnalysis.js');
+const { AIUsage } = await import('../src/models/AIUsage.js');
 const { FreelancerProfile } = await import('../src/models/FreelancerProfile.js');
 const { ClientProfile } = await import('../src/models/ClientProfile.js');
+const { Job } = await import('../src/models/Job.js');
+const { Proposal } = await import('../src/models/Proposal.js');
 const { User } = await import('../src/models/User.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 
@@ -53,8 +56,11 @@ beforeEach(async () => {
   await Promise.all([
     User.deleteMany({}),
     AIAnalysis.deleteMany({}),
+    AIUsage.deleteMany({}),
     FreelancerProfile.deleteMany({}),
     ClientProfile.deleteMany({}),
+    Job.deleteMany({}),
+    Proposal.deleteMany({}),
   ]);
 });
 after(async () => {
@@ -153,5 +159,57 @@ test('CV analysis validates authentication, role, content, and upload type', asy
     .post('/api/profiles/me/cv')
     .set('Authorization', `Bearer ${freelancerToken}`)
     .attach('document', Buffer.from('not an image'), { filename: 'photo.png', contentType: 'image/png' })
+    .expect(400);
+});
+
+test('proposal drafting is advisory, profile-grounded, rate-controlled, and never submits', async () => {
+  const freelancerToken = await register('freelancer', 'proposal-draft@example.test');
+  const clientToken = await register('client', 'proposal-client@example.test');
+  const freelancer = await User.findOne({ email: 'proposal-draft@example.test' });
+  const client = await User.findOne({ email: 'proposal-client@example.test' });
+  await FreelancerProfile.create({
+    user: freelancer._id,
+    title: 'Frontend developer',
+    skills: ['React', 'JavaScript'],
+    hourlyRate: 40,
+    experience: [{ company: 'Example Studio', title: 'Frontend developer' }],
+    visibility: 'public',
+  });
+  const job = await Job.create({
+    client: client._id,
+    title: 'Build an accessible React dashboard',
+    description: 'Create a responsive dashboard with tested React components and accessible interaction states.',
+    category: 'Development & IT',
+    skills: ['React', 'JavaScript', 'Node.js'],
+    budget: { type: 'fixed', min: 500, max: 900, currency: 'USD' },
+    duration: 'medium',
+  });
+
+  await request(app).post('/api/ai/proposal/draft').send({ job: String(job._id) }).expect(401);
+  await request(app).post('/api/ai/proposal/draft').set('Authorization', `Bearer ${clientToken}`).send({ job: String(job._id) }).expect(403);
+  await request(app).post('/api/ai/proposal/draft').set('Authorization', `Bearer ${freelancerToken}`).send({ job: String(job._id), tone: 'invented' }).expect(400);
+
+  const drafted = await request(app)
+    .post('/api/ai/proposal/draft')
+    .set('Authorization', `Bearer ${freelancerToken}`)
+    .send({ job: String(job._id), tone: 'friendly', notes: 'Emphasize accessible charts and early feedback.' })
+    .expect(200);
+  const draft = drafted.body.data.draft;
+  assert.ok(draft.coverLetter.length >= 100);
+  assert.equal(draft.suggestedBid.amount, 700);
+  assert.equal(draft.suggestedDays, 45);
+  assert.deepEqual(draft.matchedSkills, ['React', 'JavaScript']);
+  assert.deepEqual(draft.missingSkills, ['Node.js']);
+  assert.equal(draft.provider, 'heuristic');
+  assert.match(draft.disclaimer, /edit it before submitting/i);
+  assert.equal(await Proposal.countDocuments({ freelancer: freelancer._id, job: job._id }), 0);
+  assert.equal(await AIUsage.countDocuments({ user: freelancer._id, feature: 'proposal_draft' }), 1);
+
+  job.status = 'closed';
+  await job.save();
+  await request(app)
+    .post('/api/ai/proposal/draft')
+    .set('Authorization', `Bearer ${freelancerToken}`)
+    .send({ job: String(job._id) })
     .expect(400);
 });
