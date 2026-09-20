@@ -24,8 +24,19 @@ MongoDB instance. Use a real MongoDB URI when persistent local data is needed.
 - `GET /api/profiles/me`
 - `PATCH /api/profiles/me`
 - `POST /api/profiles/me/onboarding`
+- `POST|DELETE /api/profiles/me/avatar`
+- `GET /api/profiles/avatars/:filename`
 - `GET /api/profiles/talent`
 - `GET /api/profiles/:userId`
+
+Profile photos accept JPEG, PNG, or WebP images up to the configured limit.
+Opaque public URLs are stored on the account while filesystem paths remain
+server-only. Set `AVATAR_STORAGE_PROVIDER=imgbb` and configure the server-only
+`IMGBB_API_KEY` to use ImgBB; otherwise files remain under `.runtime/` locally.
+Replacing or removing a locally stored photo cleans up the previous file.
+ImgBB's v1 upload API returns a private deletion link but does not document a
+server-side deletion endpoint, so removal detaches the photo from Giggo while
+the provider may retain its hosted copy.
 
 ## Verification and trust endpoints
 

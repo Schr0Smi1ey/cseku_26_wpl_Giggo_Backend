@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { mkdtempSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
+const avatarDir = mkdtempSync(path.join(os.tmpdir(), 'giggo-avatar-test-'));
+process.env.AVATAR_UPLOAD_DIR = avatarDir;
 
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
@@ -25,9 +31,18 @@ const app = createApp();
 before(async () => connectDB());
 beforeEach(async () => {
   claimsByToken.clear();
-  await Promise.all([User.deleteMany({}), RefreshToken.deleteMany({}), FreelancerProfile.deleteMany({}), ClientProfile.deleteMany({})]);
+  await Promise.all([
+    User.deleteMany({}),
+    RefreshToken.deleteMany({}),
+    FreelancerProfile.deleteMany({}),
+    ClientProfile.deleteMany({}),
+    fs.rm(avatarDir, { recursive: true, force: true }),
+  ]);
 });
-after(async () => disconnectDB());
+after(async () => {
+  await fs.rm(avatarDir, { recursive: true, force: true });
+  await disconnectDB();
+});
 
 async function register(role, email) {
   const token = `supabase-test-${email}`;
@@ -111,4 +126,84 @@ test('client onboarding persists a separate company profile and rejects freelanc
 
   await request(app).patch('/api/profiles/me').set('Authorization', `Bearer ${token}`).send({ title: 'Not a company field' }).expect(400);
   await request(app).get(`/api/profiles/${user._id}`).expect(404);
+});
+
+test('authenticated users can upload, replace, serve, and remove a profile photo', async () => {
+  const { token, user } = await register('freelancer', 'avatar.profile@example.com');
+  await request(app)
+    .post('/api/profiles/me/onboarding')
+    .set('Authorization', `Bearer ${token}`)
+    .send(freelancerOnboarding)
+    .expect(200);
+
+  const firstPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlZQAAAAASUVORK5CYII=', 'base64');
+  const firstUpload = await request(app)
+    .post('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', firstPng, { filename: 'profile.png', contentType: 'image/png' })
+    .expect(200);
+
+  const firstUrl = firstUpload.body.data.avatar;
+  assert.match(firstUrl, /^\/api\/profiles\/avatars\/[0-9a-f-]+\.png$/i);
+  const storedUser = await User.findById(user._id).select('+avatarStorageKey +avatarStorageProvider');
+  assert.equal(storedUser.avatar, firstUrl);
+  assert.equal(path.dirname(storedUser.avatarStorageKey), avatarDir);
+  assert.equal(storedUser.avatarStorageProvider, 'local');
+
+  const served = await request(app).get(firstUrl).expect(200).expect('Content-Type', /image\/png/);
+  assert.deepEqual(served.body, firstPng);
+
+  const publicProfile = await request(app).get(`/api/profiles/${user._id}`).expect(200);
+  assert.equal(publicProfile.body.data.profile.user.avatar, firstUrl);
+  assert.equal('avatarStorageKey' in publicProfile.body.data.profile.user, false);
+  assert.equal('avatarStorageProvider' in publicProfile.body.data.profile.user, false);
+
+  const secondPng = Buffer.concat([firstPng, Buffer.from([0])]);
+  const replacement = await request(app)
+    .post('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', secondPng, { filename: 'replacement.png', contentType: 'image/png' })
+    .expect(200);
+  assert.notEqual(replacement.body.data.avatar, firstUrl);
+  await request(app).get(firstUrl).expect(404);
+  await request(app).get(replacement.body.data.avatar).expect(200);
+
+  const removed = await request(app)
+    .delete('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .expect(200);
+  assert.equal(removed.body.data.avatar, '');
+  await request(app).get(replacement.body.data.avatar).expect(404);
+});
+
+test('profile photo uploads reject unauthenticated, unsupported, and spoofed files', async () => {
+  const { token } = await register('client', 'avatar.validation@example.com');
+  const fakeImage = Buffer.from('not an image');
+
+  await request(app)
+    .post('/api/profiles/me/avatar')
+    .attach('image', fakeImage, { filename: 'profile.png', contentType: 'image/png' })
+    .expect(401);
+
+  await request(app)
+    .post('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', fakeImage, { filename: 'profile.gif', contentType: 'image/gif' })
+    .expect(400);
+
+  const spoofed = await request(app)
+    .post('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', fakeImage, { filename: 'profile.png', contentType: 'image/png' })
+    .expect(400);
+  assert.equal(spoofed.body.error.code, 'VALIDATION_ERROR');
+
+  const oversized = await request(app)
+    .post('/api/profiles/me/avatar')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('image', Buffer.alloc((5 * 1024 * 1024) + 1, 0xff), { filename: 'large.jpg', contentType: 'image/jpeg' })
+    .expect(413);
+  assert.equal(oversized.body.error.code, 'FILE_TOO_LARGE');
+
+  await request(app).get('/api/profiles/avatars/not-a-valid-name.png').expect(404);
 });
