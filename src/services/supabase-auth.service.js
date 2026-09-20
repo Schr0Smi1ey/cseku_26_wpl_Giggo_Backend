@@ -68,28 +68,38 @@ export async function syncSupabaseUser(identity) {
   let user = await User.findOne({ supabaseUserId: identity.supabaseUserId });
   if (!user) {
     user = await User.findOne({ email: identity.email });
-    if (user?.supabaseUserId && user.supabaseUserId !== identity.supabaseUserId) {
-      throw ApiError.conflict('This email is already linked to another account');
-    }
   }
 
   if (!user) {
-    user = new User({
-      name: identity.name,
-      email: identity.email,
-      role: identity.role,
-      roles: [identity.role],
-      authProvider: 'supabase',
-      supabaseUserId: identity.supabaseUserId,
-      emailVerified: true,
-    });
-  } else {
-    user.supabaseUserId = identity.supabaseUserId;
-    user.authProvider = 'supabase';
-    user.emailVerified = true;
+    try {
+      user = await User.create({
+        name: identity.name,
+        email: identity.email,
+        role: identity.role,
+        roles: [identity.role],
+        authProvider: 'supabase',
+        supabaseUserId: identity.supabaseUserId,
+        emailVerified: true,
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      // Supabase can emit an auth-state event while the initiating login/callback
+      // also synchronizes. Recover the record created by the concurrent request.
+      user = await User.findOne({
+        $or: [{ supabaseUserId: identity.supabaseUserId }, { email: identity.email }],
+      });
+      if (!user) throw error;
+    }
   }
 
+  if (user.supabaseUserId && user.supabaseUserId !== identity.supabaseUserId) {
+    throw ApiError.conflict('This email is already linked to another account');
+  }
   if (user.status !== 'active') throw ApiError.unauthorized('Account is unavailable');
+
+  user.supabaseUserId = identity.supabaseUserId;
+  user.authProvider = 'supabase';
+  user.emailVerified = true;
   if (!user.lastActiveAt || Date.now() - user.lastActiveAt.getTime() > 5 * 60 * 1000) user.lastActiveAt = new Date();
   await user.save();
   return user;

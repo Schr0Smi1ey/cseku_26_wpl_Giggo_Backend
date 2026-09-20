@@ -51,6 +51,17 @@ test('a verified Supabase session provisions a MongoDB user without a local pass
   assert.equal(user.passwordHash, undefined);
 });
 
+test('concurrent first-session synchronization provisions exactly one MongoDB user', async () => {
+  const token = tokenFor({ id: 'concurrent-user', email: 'concurrent@example.com', name: 'Concurrent User' });
+  const responses = await Promise.all([
+    request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`),
+    request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`),
+  ]);
+
+  assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+  assert.equal(await User.countDocuments({ email: 'concurrent@example.com' }), 1);
+});
+
 test('untrusted signup metadata cannot create an admin and existing MongoDB roles are retained', async () => {
   const token = tokenFor({ id: 'user-2', email: 'new@example.com', role: 'admin' });
   const created = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);

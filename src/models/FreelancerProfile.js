@@ -90,6 +90,13 @@ const freelancerProfileSchema = new Schema(
       index: true,
     },
     badges: { type: [String], default: [] },
+    cv: {
+      filename: { type: String, trim: true, maxlength: 255, default: '' },
+      mimeType: { type: String, trim: true, maxlength: 120, default: '' },
+      size: { type: Number, min: 0, default: 0 },
+      storageKey: { type: String, trim: true, maxlength: 500, default: '' },
+      uploadedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true, versionKey: false },
 );

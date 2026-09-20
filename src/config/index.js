@@ -26,7 +26,12 @@ export const config = {
   bcryptCost: numberFromEnv('BCRYPT_COST', 12),
   storage: {
     verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
+    cvMaxFileMb: numberFromEnv('CV_MAX_FILE_MB', 10),
     uploadDir: process.env.UPLOAD_DIR || '',
+  },
+  ai: {
+    provider: process.env.AI_PROVIDER || 'heuristic',
+    retention: numberFromEnv('AI_ANALYSIS_RETENTION', 50),
   },
   supabase: {
     url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),

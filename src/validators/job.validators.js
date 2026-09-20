@@ -1,0 +1,10 @@
+import { z } from 'zod';
+const categories = ['Development & IT', 'Design & Creative', 'Writing & Translation', 'Sales & Marketing', 'Admin & Support', 'Finance & Accounting', 'Engineering & Architecture', 'Legal', 'Data Science & Analytics', 'Customer Service'];
+const id = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id'); const text = (max) => z.string().trim().max(max);
+const budget = z.object({ type: z.enum(['fixed', 'hourly']).optional(), min: z.coerce.number().min(0).max(10000000).optional(), max: z.coerce.number().min(0).max(10000000).optional(), currency: text(3).optional() }).strict();
+const base = z.object({ title: text(150).min(3), description: text(10000).min(20), category: z.enum(categories), skills: z.array(text(50).min(1)).max(20).optional(), budget: budget.optional(), experienceLevel: z.enum(['entry', 'intermediate', 'expert']).optional(), duration: z.enum(['short', 'medium', 'long']).optional(), status: z.enum(['draft', 'open']).optional() }).strict();
+export const createJobSchema = base;
+export const updateJobSchema = base.partial().extend({ status: z.enum(['draft', 'open', 'closed', 'filled']).optional() }).strict();
+export const idSchema = z.object({ id });
+export const listJobsSchema = z.object({ q: text(120).optional(), category: z.enum(categories).optional(), budgetType: z.enum(['fixed', 'hourly']).optional(), experienceLevel: z.enum(['entry', 'intermediate', 'expert']).optional(), duration: z.enum(['short', 'medium', 'long']).optional(), sort: z.enum(['recent', 'budget_asc', 'budget_desc']).optional(), page: z.coerce.number().int().min(1).optional(), limit: z.coerce.number().int().min(1).max(50).optional() }).strict();
+export const mineJobsSchema = z.object({ status: z.enum(['draft', 'open', 'closed', 'filled']).optional(), page: z.coerce.number().int().min(1).optional(), limit: z.coerce.number().int().min(1).max(50).optional() }).strict();
