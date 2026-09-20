@@ -77,3 +77,26 @@ provider must be implemented server-side with a private credential and structure
 - Public: `GET /api/jobs`, `GET /api/jobs/:id`
 - Client: `POST /api/jobs`, `GET /api/jobs/mine`, `PATCH|DELETE /api/jobs/:id`
 - Freelancer: `POST|DELETE /api/jobs/:id/save`, `GET /api/jobs/saved`
+
+When a valid freelancer access token is present, `GET /api/jobs` includes that
+user's applied/followed state on each result. The optional
+`activity=applied|followed` query returns the corresponding personal job set;
+using an activity filter requires a freelancer account.
+
+## Proposal creation endpoints
+
+- Freelancer: `POST /api/proposals`, `GET /api/proposals/mine`
+- Freelancer: `GET /api/proposals/jobs/:jobId/mine`, `PATCH /api/proposals/:id`
+- Freelancer: `POST /api/proposals/:id/withdraw`
+- Client: `GET /api/proposals/received`, `POST /api/proposals/:id/decision`
+- Participant: `GET /api/proposals/:id`
+- Freelancer draft assistant: `POST /api/ai/proposal/draft`
+
+Proposal submission accepts a cover letter, bid, estimated duration, optional
+milestones, and an AI-assistance disclosure. The server accepts proposals only
+from freelancer accounts, only for open jobs, and enforces one proposal per
+freelancer and job. Active proposals can be revised or withdrawn, and a
+withdrawn proposal can be resubmitted without creating a duplicate record. Job
+owners can privately shortlist, reject, or reconsider proposals, but hiring is
+reserved for the offer and contract workflow. The local draft assistant returns
+an editable, profile-grounded suggestion and never creates a proposal.

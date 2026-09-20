@@ -33,4 +33,8 @@ export const aiController = {
     }
     return ok(res, { profile, added: result.added });
   }),
+  draftProposal: asyncHandler(async (req, res) => {
+    const draft = await aiService.draftProposal(req.user, req.body);
+    return ok(res, { draft }, 'Draft ready');
+  }),
 };

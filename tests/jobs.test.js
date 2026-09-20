@@ -8,11 +8,12 @@ const { connectDB, disconnectDB } = await import('../src/config/db.js');
 const { User } = await import('../src/models/User.js');
 const { Job } = await import('../src/models/Job.js');
 const { SavedJob } = await import('../src/models/SavedJob.js');
+const { Proposal } = await import('../src/models/Proposal.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 const claims = new Map(); setSupabaseTokenVerifierForTests(async (token) => { if (!claims.has(token)) throw new Error('Unknown token'); return claims.get(token); });
 const app = createApp(); const token = (id, email, role) => { const value = `token-${id}`; claims.set(value, { sub: id, email, user_metadata: { name: id, signup_role: role } }); return value; };
 const body = { title: 'Build a React dashboard', description: 'Create a responsive analytics dashboard with reusable React components.', category: 'Development & IT', skills: ['React'], budget: { type: 'fixed', min: 500, max: 1200 } };
-before(async () => connectDB()); beforeEach(async () => { claims.clear(); await Promise.all([User.deleteMany({}), Job.deleteMany({}), SavedJob.deleteMany({})]); }); after(async () => disconnectDB());
+before(async () => connectDB()); beforeEach(async () => { claims.clear(); await Promise.all([User.deleteMany({}), Job.deleteMany({}), SavedJob.deleteMany({}), Proposal.deleteMany({})]); }); after(async () => disconnectDB());
 
 test('clients can post and manage jobs while freelancers can save public jobs', async () => {
   const client = token('client-1', 'client@example.test', 'client'); const freelancer = token('freelancer-1', 'freelancer@example.test', 'freelancer');

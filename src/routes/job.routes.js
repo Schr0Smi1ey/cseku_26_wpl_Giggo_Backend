@@ -5,7 +5,7 @@ import { validate } from '../middlewares/validate.js';
 import { jobController } from '../controllers/job.controller.js';
 import { createJobSchema, idSchema, listJobsSchema, mineJobsSchema, updateJobSchema } from '../validators/job.validators.js';
 const router = Router(); const params = (schema) => (req, _res, next) => { const result = schema.safeParse(req.params); if (!result.success) return next(result.error); req.params = result.data; return next(); }; const query = (schema) => (req, _res, next) => { const result = schema.safeParse(req.query); if (!result.success) return next(result.error); req.query = result.data; return next(); };
-router.get('/', query(listJobsSchema), jobController.list);
+router.get('/', optionalAuth, query(listJobsSchema), jobController.list);
 router.get('/mine', requireAuth, requireRole(ROLES.CLIENT), query(mineJobsSchema), jobController.mine);
 router.get('/saved', requireAuth, requireRole(ROLES.FREELANCER), query(mineJobsSchema), jobController.saved);
 router.post('/', requireAuth, requireRole(ROLES.CLIENT), validate(createJobSchema), jobController.create);

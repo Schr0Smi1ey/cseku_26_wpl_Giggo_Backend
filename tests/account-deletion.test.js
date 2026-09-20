@@ -15,10 +15,12 @@ process.env.AVATAR_UPLOAD_DIR = path.join(runtimeDir, 'avatars');
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
 const { AIAnalysis } = await import('../src/models/AIAnalysis.js');
+const { AIUsage } = await import('../src/models/AIUsage.js');
 const { ClientProfile } = await import('../src/models/ClientProfile.js');
 const { DeletedIdentity } = await import('../src/models/DeletedIdentity.js');
 const { FreelancerProfile } = await import('../src/models/FreelancerProfile.js');
 const { Job } = await import('../src/models/Job.js');
+const { Proposal } = await import('../src/models/Proposal.js');
 const { RefreshToken } = await import('../src/models/RefreshToken.js');
 const { SavedJob } = await import('../src/models/SavedJob.js');
 const { User } = await import('../src/models/User.js');
@@ -61,10 +63,12 @@ beforeEach(async () => {
   adminDeleteFailure = null;
   await Promise.all([
     AIAnalysis.deleteMany({}),
+    AIUsage.deleteMany({}),
     ClientProfile.deleteMany({}),
     DeletedIdentity.deleteMany({}),
     FreelancerProfile.deleteMany({}),
     Job.deleteMany({}),
+    Proposal.deleteMany({}),
     RefreshToken.deleteMany({}),
     SavedJob.deleteMany({}),
     User.deleteMany({}),
@@ -102,7 +106,16 @@ test('fresh authentication tolerates a slightly faster issuer clock and deletes 
     source: { kind: 'text' },
     result: { summary: 'Delete this analysis', overallScore: 50, atsScore: 50, disclaimer: 'Advisory only' },
   });
+  await AIUsage.create({ user: user._id, feature: 'proposal_draft', provider: 'heuristic' });
   const job = await Job.create({ client: user._id, title: 'Delete this job', description: 'This job belongs to an account scheduled for permanent deletion.', category: 'Development & IT' });
+  await Proposal.create({
+    job: job._id,
+    freelancer: user._id,
+    client: user._id,
+    coverLetter: 'Delete this proposal together with the account and every related marketplace record stored for the user.',
+    bid: { amount: 100, type: 'fixed', currency: 'USD' },
+    estimatedDays: 5,
+  });
   await SavedJob.create({ user: user._id, job: job._id });
 
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlZQAAAAASUVORK5CYII=', 'base64');
@@ -127,12 +140,14 @@ test('fresh authentication tolerates a slightly faster issuer clock and deletes 
     FreelancerProfile.countDocuments({ user: user._id }),
     ClientProfile.countDocuments({ user: user._id }),
     AIAnalysis.countDocuments({ user: user._id }),
+    AIUsage.countDocuments({ user: user._id }),
     VerificationRequest.countDocuments({ user: user._id }),
     Job.countDocuments({ client: user._id }),
+    Proposal.countDocuments({ $or: [{ freelancer: user._id }, { client: user._id }] }),
     SavedJob.countDocuments({ user: user._id }),
     RefreshToken.countDocuments({ user: user._id }),
   ]);
-  assert.deepEqual(counts, [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(counts, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(await DeletedIdentity.countDocuments({ supabaseUserId }), 1);
   await Promise.all([
     assert.rejects(fs.access(cvPath)),

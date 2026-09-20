@@ -172,7 +172,7 @@ export const profileService = {
 
   async getPublicFreelancer(userId) {
     if (!mongoose.isValidObjectId(userId)) throw ApiError.notFound('Freelancer profile not found');
-    const profile = await FreelancerProfile.findOne({ user: userId, visibility: 'public', onboardingCompleted: true })
+    const profile = await FreelancerProfile.findOne({ user: userId, visibility: 'public' })
       .populate('user', 'name avatar role status');
     if (!profile || !profile.user || profile.user.status !== 'active') throw ApiError.notFound('Freelancer profile not found');
     return profile;

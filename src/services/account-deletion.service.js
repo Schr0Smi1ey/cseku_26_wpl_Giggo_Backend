@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
 import { AIAnalysis } from '../models/AIAnalysis.js';
+import { AIUsage } from '../models/AIUsage.js';
 import { ClientProfile } from '../models/ClientProfile.js';
 import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { Job } from '../models/Job.js';
+import { Proposal } from '../models/Proposal.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { SavedJob } from '../models/SavedJob.js';
 import { ROLES, User } from '../models/User.js';
@@ -72,12 +74,14 @@ export const accountDeletionService = {
 
     await Promise.all([
       AIAnalysis.deleteMany({ user: account._id }),
+      AIUsage.deleteMany({ user: account._id }),
       ClientProfile.deleteMany({ user: account._id }),
       FreelancerProfile.deleteMany({ user: account._id }),
       RefreshToken.deleteMany({ user: account._id }),
       SavedJob.deleteMany(savedJobsFilter),
       VerificationRequest.deleteMany({ user: account._id }),
       Job.deleteMany({ client: account._id }),
+      Proposal.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
     ]);
     await User.deleteOne({ _id: account._id });
     clearVerificationStateForUser(account._id);
