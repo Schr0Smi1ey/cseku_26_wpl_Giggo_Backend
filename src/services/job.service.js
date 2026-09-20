@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 import { Job } from '../models/Job.js';
 import { SavedJob } from '../models/SavedJob.js';
 import { Proposal } from '../models/Proposal.js';
+import { Offer } from '../models/Offer.js';
+import { OfferMessage } from '../models/OfferMessage.js';
+import { OfferRevision } from '../models/OfferRevision.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const clientSelect = 'name avatar role status';
@@ -72,8 +75,8 @@ export const jobService = {
     return job;
   },
   async mine(user, filters) { const where = { client: user._id, ...(filters.status ? { status: filters.status } : {}) }; return paginate(Job.find(where).sort({ createdAt: -1 }), Job.countDocuments(where), filters); },
-  async update(user, id, patch) { const job = await owned(user, id); Object.assign(job, patch); if (patch.budget) job.budget = { ...job.budget.toObject(), ...patch.budget }; await job.save(); return job; },
-  async remove(user, id) { const job = await owned(user, id); await Promise.all([job.deleteOne(), SavedJob.deleteMany({ job: job._id }), Proposal.deleteMany({ job: job._id })]); return { deleted: true }; },
+  async update(user, id, patch) { const job = await owned(user, id); if (job.hiredProposal && patch.status && patch.status !== 'filled') throw ApiError.conflict('A filled job cannot be reopened before its accepted engagement is resolved'); Object.assign(job, patch); if (patch.budget) job.budget = { ...job.budget.toObject(), ...patch.budget }; await job.save(); return job; },
+  async remove(user, id) { const job = await owned(user, id); if (job.hiredProposal) throw ApiError.conflict('A filled job cannot be deleted while it has an accepted offer'); const offerIds = await Offer.find({ job: job._id }).distinct('_id'); await Promise.all([job.deleteOne(), SavedJob.deleteMany({ job: job._id }), Proposal.deleteMany({ job: job._id }), OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: offerIds }) }), OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: offerIds }) }), Offer.deleteMany({ job: job._id })]); return { deleted: true }; },
   async save(user, id) { const job = await Job.findOne({ _id: id, status: 'open' }); if (!job) throw ApiError.notFound('Job not found'); const existing = await SavedJob.findOne({ user: user._id, job: id }); if (!existing) { await SavedJob.create({ user: user._id, job: id }); await Job.updateOne({ _id: id }, { $inc: { savedCount: 1 } }); } return { saved: true }; },
   async unsave(user, id) { const removed = await SavedJob.findOneAndDelete({ user: user._id, job: id }); if (removed) await Job.updateOne({ _id: id, savedCount: { $gt: 0 } }, { $inc: { savedCount: -1 } }); return { saved: false }; },
   async saved(user, filters) { const where = { user: user._id }; const rows = await SavedJob.find(where).sort({ createdAt: -1 }).skip(((filters.page || 1) - 1) * (filters.limit || 20)).limit(filters.limit || 20).populate({ path: 'job', populate: { path: 'client', select: clientSelect } }); const total = await SavedJob.countDocuments(where); const items = rows.map((row) => row.job).filter(Boolean); return { items, pagination: { page: filters.page || 1, limit: filters.limit || 20, total, totalPages: Math.max(1, Math.ceil(total / (filters.limit || 20))) } }; },

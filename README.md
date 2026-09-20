@@ -1,7 +1,7 @@
 # Giggo Backend
 
-Giggo currently implements backend support through Phase 5: Supabase-authenticated
-accounts, role-specific profiles, CV analysis, verification, and the job marketplace.
+Giggo currently implements Supabase-authenticated accounts, role-specific
+profiles, CV analysis, verification, jobs, proposals, and offer negotiation.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
 2. Run `npm install`.
@@ -100,3 +100,30 @@ withdrawn proposal can be resubmitted without creating a duplicate record. Job
 owners can privately shortlist, reject, or reconsider proposals, but hiring is
 reserved for the offer and contract workflow. The local draft assistant returns
 an editable, profile-grounded suggestion and never creates a proposal.
+
+## Offer workflow endpoints
+
+- Participant: `GET /api/offers`, `GET /api/offers/:id`
+- Participant: `POST /api/offers/:id/messages`
+- Client: `POST /api/offers`, `PATCH /api/offers/:id`
+- Client: `POST /api/offers/:id/send`, `POST /api/offers/:id/withdraw`
+- Freelancer: `POST /api/offers/:id/accept`, `POST /api/offers/:id/reject`
+- Freelancer: `POST /api/offers/:id/request-changes`
+
+Only a job owner can create an offer, and only from one of that job's
+shortlisted proposals. Drafts remain private to the client. Sent offers can be
+accepted, declined, or returned with a bounded change request. Every sent
+version is stored as an immutable revision. While a client prepares a revision,
+the freelancer continues to see the last published terms; acceptance must
+include the exact current `revision` number. Participant-only messages and
+change requests form a chronological negotiation record. Obvious off-platform
+contact details are rejected until the offer has been accepted. The database
+permits only one active offer per proposal. Accepting an unexpired offer uses
+conditional updates so only one proposal can fill a job, then records the
+accepted revision and closes the job to further hiring. Contract and project
+records are intentionally deferred to the next delivery slice.
+
+For installations that already contain sent offers from the earlier mutable
+schema, run `npm run migrate:offer-history` once. It preserves each offer's
+currently stored terms as its first available immutable snapshot; terms that
+were overwritten before this migration cannot be reconstructed.

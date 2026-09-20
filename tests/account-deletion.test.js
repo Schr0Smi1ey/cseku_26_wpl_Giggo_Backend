@@ -20,6 +20,7 @@ const { ClientProfile } = await import('../src/models/ClientProfile.js');
 const { DeletedIdentity } = await import('../src/models/DeletedIdentity.js');
 const { FreelancerProfile } = await import('../src/models/FreelancerProfile.js');
 const { Job } = await import('../src/models/Job.js');
+const { Offer } = await import('../src/models/Offer.js');
 const { Proposal } = await import('../src/models/Proposal.js');
 const { RefreshToken } = await import('../src/models/RefreshToken.js');
 const { SavedJob } = await import('../src/models/SavedJob.js');
@@ -68,6 +69,7 @@ beforeEach(async () => {
     DeletedIdentity.deleteMany({}),
     FreelancerProfile.deleteMany({}),
     Job.deleteMany({}),
+    Offer.deleteMany({}),
     Proposal.deleteMany({}),
     RefreshToken.deleteMany({}),
     SavedJob.deleteMany({}),
@@ -108,12 +110,22 @@ test('fresh authentication tolerates a slightly faster issuer clock and deletes 
   });
   await AIUsage.create({ user: user._id, feature: 'proposal_draft', provider: 'heuristic' });
   const job = await Job.create({ client: user._id, title: 'Delete this job', description: 'This job belongs to an account scheduled for permanent deletion.', category: 'Development & IT' });
-  await Proposal.create({
+  const proposal = await Proposal.create({
     job: job._id,
     freelancer: user._id,
     client: user._id,
     coverLetter: 'Delete this proposal together with the account and every related marketplace record stored for the user.',
     bid: { amount: 100, type: 'fixed', currency: 'USD' },
+    estimatedDays: 5,
+  });
+  await Offer.create({
+    client: user._id,
+    freelancer: user._id,
+    job: job._id,
+    proposal: proposal._id,
+    title: 'Delete this offer',
+    description: 'Delete this marketplace offer together with the related account records.',
+    budget: { amount: 100, type: 'fixed', currency: 'USD' },
     estimatedDays: 5,
   });
   await SavedJob.create({ user: user._id, job: job._id });
@@ -143,11 +155,12 @@ test('fresh authentication tolerates a slightly faster issuer clock and deletes 
     AIUsage.countDocuments({ user: user._id }),
     VerificationRequest.countDocuments({ user: user._id }),
     Job.countDocuments({ client: user._id }),
+    Offer.countDocuments({ $or: [{ freelancer: user._id }, { client: user._id }] }),
     Proposal.countDocuments({ $or: [{ freelancer: user._id }, { client: user._id }] }),
     SavedJob.countDocuments({ user: user._id }),
     RefreshToken.countDocuments({ user: user._id }),
   ]);
-  assert.deepEqual(counts, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(counts, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.equal(await DeletedIdentity.countDocuments({ supabaseUserId }), 1);
   await Promise.all([
     assert.rejects(fs.access(cvPath)),

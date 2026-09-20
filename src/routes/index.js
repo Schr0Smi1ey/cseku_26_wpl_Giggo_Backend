@@ -5,6 +5,7 @@ import verificationRoutes from './verification.routes.js';
 import aiRoutes from './ai.routes.js';
 import jobRoutes from './job.routes.js';
 import proposalRoutes from './proposal.routes.js';
+import offerRoutes from './offer.routes.js';
 
 const router = Router();
 
@@ -15,5 +16,6 @@ router.use('/verification', verificationRoutes);
 router.use('/ai', aiRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/proposals', proposalRoutes);
+router.use('/offers', offerRoutes);
 
 export default router;
