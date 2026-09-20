@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { Job } from '../models/Job.js';
+import { Offer } from '../models/Offer.js';
 import { Proposal } from '../models/Proposal.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -35,6 +36,20 @@ async function profileSnippets(userIds) {
   const profiles = await FreelancerProfile.find({ user: mongoose.trusted({ $in: userIds }) })
     .select('user title hourlyRate skills badges completeness verificationState');
   return Object.fromEntries(profiles.map((profile) => [String(profile.user), profile.toJSON()]));
+}
+
+async function offerSnippets(proposalIds) {
+  if (!proposalIds.length) return {};
+  const offers = await Offer.find({ proposal: mongoose.trusted({ $in: proposalIds }) })
+    .sort({ createdAt: -1 })
+    .select('proposal status revision changeRequest expiresAt sentAt createdAt updatedAt')
+    .lean();
+  const byProposal = {};
+  for (const offer of offers) {
+    const proposalId = String(offer.proposal);
+    if (!byProposal[proposalId]) byProposal[proposalId] = offer;
+  }
+  return byProposal;
 }
 
 function pageData(items, total, page, limit) {
@@ -105,10 +120,14 @@ export const proposalService = {
         .populate('job', JOB_SELECT),
       Proposal.countDocuments(filter),
     ]);
-    const profiles = await profileSnippets(items.map((proposal) => proposal.freelancer?._id).filter(Boolean));
+    const [profiles, offers] = await Promise.all([
+      profileSnippets(items.map((proposal) => proposal.freelancer?._id).filter(Boolean)),
+      offerSnippets(items.map((proposal) => proposal._id)),
+    ]);
     return pageData(items.map((proposal) => {
       const item = proposal.toJSON();
       item.freelancerProfile = profiles[String(proposal.freelancer?._id)] || null;
+      item.offer = offers[String(proposal._id)] || null;
       return item;
     }), total, page, limit);
   },
@@ -128,9 +147,14 @@ export const proposalService = {
       proposal.viewedAt = new Date();
       await proposal.save();
     }
-    const profiles = await profileSnippets([proposal.freelancer?._id].filter(Boolean));
+    const [profiles, offers] = await Promise.all([
+      profileSnippets([proposal.freelancer?._id].filter(Boolean)),
+      offerSnippets([proposal._id]),
+    ]);
     const item = proposal.toJSON();
     item.freelancerProfile = profiles[String(proposal.freelancer?._id)] || null;
+    const latestOffer = offers[String(proposal._id)] || null;
+    item.offer = isClient || latestOffer?.status !== 'draft' || latestOffer?.sentAt ? latestOffer : null;
     return item;
   },
 
@@ -151,6 +175,9 @@ export const proposalService = {
     if (!ACTIVE_STATUSES.includes(proposal.status)) {
       throw ApiError.badRequest(`This proposal is already ${proposal.status}`);
     }
+    if (await Offer.exists({ proposal: proposal._id, active: true })) {
+      throw ApiError.conflict('Respond to the active offer before withdrawing this proposal');
+    }
     proposal.status = 'withdrawn';
     proposal.withdrawnAt = new Date();
     await proposal.save();
@@ -161,6 +188,9 @@ export const proposalService = {
     const proposal = await receivedProposal(user, id);
     if (proposal.status === 'withdrawn') throw ApiError.badRequest('This proposal was withdrawn by the freelancer');
     if (proposal.status === 'accepted') throw ApiError.badRequest('This proposal was already accepted');
+    if (await Offer.exists({ proposal: proposal._id, active: true })) {
+      throw ApiError.conflict('Withdraw the active offer before changing this proposal decision');
+    }
     if (decision === 'reconsider' && !['shortlisted', 'rejected'].includes(proposal.status)) {
       throw ApiError.badRequest('Only shortlisted or rejected proposals can be reconsidered');
     }

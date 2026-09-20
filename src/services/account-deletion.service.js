@@ -5,6 +5,9 @@ import { ClientProfile } from '../models/ClientProfile.js';
 import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { Job } from '../models/Job.js';
+import { Offer } from '../models/Offer.js';
+import { OfferMessage } from '../models/OfferMessage.js';
+import { OfferRevision } from '../models/OfferRevision.js';
 import { Proposal } from '../models/Proposal.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { SavedJob } from '../models/SavedJob.js';
@@ -62,12 +65,14 @@ export const accountDeletionService = {
       throw error;
     }
 
-    const [freelancerProfile, verificationRequests, ownedJobs] = await Promise.all([
+    const [freelancerProfile, verificationRequests, ownedJobs, relatedOffers] = await Promise.all([
       FreelancerProfile.findOne({ user: account._id }),
       VerificationRequest.find({ user: account._id }).select('+documents.path'),
       Job.find({ client: account._id }).select('_id'),
+      Offer.find({ $or: [{ freelancer: account._id }, { client: account._id }] }).select('_id'),
     ]);
     const ownedJobIds = ownedJobs.map((job) => job._id);
+    const relatedOfferIds = relatedOffers.map((offer) => offer._id);
     const savedJobsFilter = ownedJobIds.length
       ? { $or: [{ user: account._id }, { job: mongoose.trusted({ $in: ownedJobIds }) }] }
       : { user: account._id };
@@ -81,6 +86,9 @@ export const accountDeletionService = {
       SavedJob.deleteMany(savedJobsFilter),
       VerificationRequest.deleteMany({ user: account._id }),
       Job.deleteMany({ client: account._id }),
+      OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
+      OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
+      Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Proposal.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
     ]);
     await User.deleteOne({ _id: account._id });

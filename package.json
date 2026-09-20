@@ -7,7 +7,9 @@
     "dev": "node ./node_modules/nodemon/bin/nodemon.js src/server.js",
     "start": "node src/server.js",
     "test": "node --test --test-concurrency=1",
-    "bootstrap:admin": "node scripts/bootstrap-admin.js"
+    "bootstrap:admin": "node scripts/bootstrap-admin.js",
+    "repair:offer-indexes": "node scripts/repair-offer-indexes.js",
+    "migrate:offer-history": "node scripts/migrate-offer-history.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
