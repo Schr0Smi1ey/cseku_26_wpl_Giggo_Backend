@@ -22,3 +22,4 @@ export const loginSchema = z.object({
 });
 
 export const verifyEmailSchema = z.object({ token: z.string().trim().min(32).max(256) }).strict();
+export const deleteAccountSchema = z.object({ confirmation: z.literal('DELETE') }).strict();

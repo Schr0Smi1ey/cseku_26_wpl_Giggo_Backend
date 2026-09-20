@@ -1,0 +1,95 @@
+import mongoose from 'mongoose';
+import { AIAnalysis } from '../models/AIAnalysis.js';
+import { ClientProfile } from '../models/ClientProfile.js';
+import { DeletedIdentity } from '../models/DeletedIdentity.js';
+import { FreelancerProfile } from '../models/FreelancerProfile.js';
+import { Job } from '../models/Job.js';
+import { RefreshToken } from '../models/RefreshToken.js';
+import { SavedJob } from '../models/SavedJob.js';
+import { ROLES, User } from '../models/User.js';
+import { VerificationRequest } from '../models/VerificationRequest.js';
+import { ApiError } from '../utils/ApiError.js';
+import { removeAvatarAsset } from './avatar.storage.service.js';
+import { removeCvFile } from './profile.service.js';
+import { deleteSupabaseIdentity } from './supabase-admin.service.js';
+import { clearVerificationStateForUser } from './verification.service.js';
+import { removeVerificationDocument } from './verification.storage.service.js';
+
+const recentAuthenticationSeconds = 10 * 60;
+const clockToleranceSeconds = 30;
+
+function requireRecentAuthentication(identity) {
+  const issuedAt = Number(identity?.issuedAt || 0);
+  const age = Math.floor(Date.now() / 1000) - issuedAt;
+  // Supabase and the API host can differ slightly in time. A fresh token must
+  // not fail solely because the issuer's clock is a few seconds ahead.
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0 || age < -clockToleranceSeconds || age > recentAuthenticationSeconds) {
+    throw new ApiError(401, 'Sign in again before deleting your account', 'RECENT_AUTH_REQUIRED');
+  }
+}
+
+export const accountDeletionService = {
+  async remove(user, identity) {
+    requireRecentAuthentication(identity);
+    if (user.hasRole(ROLES.ADMIN)) throw ApiError.forbidden('Administrator accounts require a separate reviewed removal process');
+    if (!user.supabaseUserId) throw ApiError.badRequest('This account is not linked to Supabase authentication');
+
+    const account = await User.findOneAndUpdate(
+      { _id: user._id, status: 'active' },
+      { $set: { status: 'deletion_pending' } },
+      { new: true },
+    ).select('+avatarStorageKey +avatarStorageProvider');
+    if (!account) throw ApiError.conflict('Account deletion is already in progress');
+
+    let tombstoneCreated = false;
+    try {
+      const tombstoneResult = await DeletedIdentity.updateOne(
+        { supabaseUserId: account.supabaseUserId },
+        { $setOnInsert: { supabaseUserId: account.supabaseUserId, deletedAt: new Date() } },
+        { upsert: true },
+      );
+      tombstoneCreated = tombstoneResult.upsertedCount === 1;
+      if (!tombstoneCreated) throw ApiError.conflict('Account deletion is already in progress');
+      await deleteSupabaseIdentity(account.supabaseUserId);
+    } catch (error) {
+      const rollbackTasks = [
+        User.updateOne({ _id: account._id, status: 'deletion_pending' }, { $set: { status: 'active' } }),
+      ];
+      if (tombstoneCreated) rollbackTasks.push(DeletedIdentity.deleteOne({ supabaseUserId: account.supabaseUserId }));
+      await Promise.allSettled(rollbackTasks);
+      throw error;
+    }
+
+    const [freelancerProfile, verificationRequests, ownedJobs] = await Promise.all([
+      FreelancerProfile.findOne({ user: account._id }),
+      VerificationRequest.find({ user: account._id }).select('+documents.path'),
+      Job.find({ client: account._id }).select('_id'),
+    ]);
+    const ownedJobIds = ownedJobs.map((job) => job._id);
+    const savedJobsFilter = ownedJobIds.length
+      ? { $or: [{ user: account._id }, { job: mongoose.trusted({ $in: ownedJobIds }) }] }
+      : { user: account._id };
+
+    await Promise.all([
+      AIAnalysis.deleteMany({ user: account._id }),
+      ClientProfile.deleteMany({ user: account._id }),
+      FreelancerProfile.deleteMany({ user: account._id }),
+      RefreshToken.deleteMany({ user: account._id }),
+      SavedJob.deleteMany(savedJobsFilter),
+      VerificationRequest.deleteMany({ user: account._id }),
+      Job.deleteMany({ client: account._id }),
+    ]);
+    await User.deleteOne({ _id: account._id });
+    clearVerificationStateForUser(account._id);
+
+    const storedDocuments = verificationRequests.flatMap((request) => request.documents || []);
+    const remoteAvatarCopyMayRemain = account.avatarStorageProvider === 'imgbb' && Boolean(account.avatarStorageKey);
+    await Promise.allSettled([
+      removeAvatarAsset(account.avatarStorageKey, account.avatarStorageProvider),
+      removeCvFile(freelancerProfile?.cv?.storageKey),
+      ...storedDocuments.map((document) => removeVerificationDocument(document.path)),
+    ]);
+
+    return { deleted: true, remoteAvatarCopyMayRemain };
+  },
+};

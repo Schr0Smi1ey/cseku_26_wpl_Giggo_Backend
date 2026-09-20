@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema(
     phoneVerified: { type: Boolean, default: false },
     emailVerificationTokenHash: { type: String, select: false, default: '' },
     emailVerificationExpiresAt: { type: Date, select: false },
-    status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' },
+    status: { type: String, enum: ['active', 'suspended', 'banned', 'deletion_pending'], default: 'active' },
     lastActiveAt: { type: Date },
   },
   { timestamps: true, versionKey: false },

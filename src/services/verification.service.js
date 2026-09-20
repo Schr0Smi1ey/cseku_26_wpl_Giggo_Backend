@@ -145,3 +145,7 @@ export const verificationService = {
 export function resetVerificationTestState() {
   phoneCodes.clear();
 }
+
+export function clearVerificationStateForUser(userId) {
+  phoneCodes.delete(String(userId));
+}

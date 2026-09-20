@@ -40,6 +40,8 @@ export const config = {
   },
   supabase: {
     url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    adminTimeoutMs: numberFromEnv('SUPABASE_ADMIN_TIMEOUT_MS', 10000),
   },
   jwt: {
     accessSecret: process.env.JWT_SECRET || (isTest ? 'test-access-secret' : 'dev-access-secret-change-me'),
