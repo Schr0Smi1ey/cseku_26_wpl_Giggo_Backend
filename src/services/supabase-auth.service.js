@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { config } from '../config/index.js';
 import { ROLES, User } from '../models/User.js';
+import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const jwksByUrl = new Map();
@@ -24,6 +25,7 @@ function identityFromClaims(payload) {
   const supabaseUserId = normalizeString(payload.sub, 128);
   const email = normalizeString(payload.email, 254).toLowerCase();
   const metadata = payload.user_metadata && typeof payload.user_metadata === 'object' ? payload.user_metadata : {};
+  const issuedAt = Number.isFinite(Number(payload.iat)) ? Number(payload.iat) : 0;
 
   if (!supabaseUserId || !email) throw ApiError.unauthorized('Invalid Supabase access token');
   // Supabase access-token JWTs do not carry email_confirmed_at. Email confirmation is
@@ -34,6 +36,7 @@ function identityFromClaims(payload) {
     email,
     name: normalizeString(metadata.name, 100) || email.split('@')[0],
     role: requestedRole(metadata),
+    issuedAt,
   };
 }
 
@@ -71,6 +74,9 @@ export async function syncSupabaseUser(identity) {
   }
 
   if (!user) {
+    if (await DeletedIdentity.exists({ supabaseUserId: identity.supabaseUserId })) {
+      throw ApiError.unauthorized('Account has been deleted');
+    }
     try {
       user = await User.create({
         name: identity.name,

@@ -18,6 +18,15 @@ MongoDB instance. Use a real MongoDB URI when persistent local data is needed.
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `DELETE /api/auth/account`
+
+Permanent account deletion requires a recently issued Supabase session and the
+exact confirmation text `DELETE`. The backend removes the Supabase identity and
+Giggo-owned profile, CV, analysis, verification, job, saved-job, and session
+records. Configure `SUPABASE_SERVICE_ROLE_KEY` only in the backend's ignored
+`.env`; never put it in a Vite variable or frontend repository. Administrator
+accounts cannot use this self-service deletion route. If an ImgBB avatar was
+used, Giggo detaches it but cannot confirm deletion of the provider's copy.
 
 ## Phase 2 endpoints
 

@@ -16,6 +16,20 @@ const cvExtensions = new Map([
   ['text/plain', '.txt'],
 ]);
 
+function cvDirectory() {
+  return path.resolve(process.env.UPLOAD_DIR || path.join('.runtime', 'cvs'));
+}
+
+function isInsideCvDirectory(filePath) {
+  const relative = path.relative(cvDirectory(), path.resolve(filePath));
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+export async function removeCvFile(storageKey) {
+  if (!storageKey || !isInsideCvDirectory(storageKey)) return;
+  await fs.rm(storageKey, { force: true });
+}
+
 function profileTypeFor(user) {
   if (user.role === ROLES.FREELANCER) return 'freelancer';
   if (user.role === ROLES.CLIENT) return 'client';
@@ -122,7 +136,7 @@ export const profileService = {
     if (!extension) throw ApiError.badRequest('Only PDF, DOCX, and TXT CV files are accepted');
 
     const { profile } = await getOrCreate(user);
-    const root = process.env.UPLOAD_DIR || path.resolve('.runtime', 'cvs');
+    const root = cvDirectory();
     const storageKey = path.join(root, `${user._id}-${crypto.randomUUID()}${extension}`);
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(storageKey, file.buffer, { flag: 'wx' });
@@ -139,10 +153,10 @@ export const profileService = {
     try {
       await profile.save();
     } catch (error) {
-      await fs.unlink(storageKey).catch(() => {});
+      await removeCvFile(storageKey).catch(() => {});
       throw error;
     }
-    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    await removeCvFile(previousKey);
     return { profile, type: 'freelancer' };
   },
 
@@ -152,7 +166,7 @@ export const profileService = {
     const previousKey = profile.cv?.storageKey;
     profile.cv = { filename: '', mimeType: '', size: 0, storageKey: '', uploadedAt: null };
     await profile.save();
-    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    await removeCvFile(previousKey);
     return { profile, type: 'freelancer' };
   },
 
