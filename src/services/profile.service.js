@@ -4,8 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ClientProfile } from '../models/ClientProfile.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
-import { ROLES } from '../models/User.js';
+import { ROLES, User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
+import { removeAvatarAsset, storeAvatar } from './avatar.storage.service.js';
 
 const freelancerFields = ['title', 'overview', 'category', 'hourlyRate', 'availability', 'skills', 'languages', 'location', 'links', 'education', 'experience', 'certifications', 'portfolio', 'visibility'];
 const clientFields = ['companyName', 'companyDescription', 'industry', 'website', 'teamSize', 'location'];
@@ -80,6 +81,39 @@ export const profileService = {
     return { profile, type };
   },
 
+  async uploadAvatar(user, file) {
+    const account = await User.findById(user._id).select('+avatarStorageKey +avatarStorageProvider');
+    if (!account) throw ApiError.notFound('Account not found');
+
+    const stored = await storeAvatar(file);
+    const previousStorageKey = account.avatarStorageKey;
+    const previousProvider = account.avatarStorageProvider;
+    account.avatar = stored.url;
+    account.avatarStorageKey = stored.storageKey;
+    account.avatarStorageProvider = stored.provider;
+    try {
+      await account.save();
+    } catch (error) {
+      await removeAvatarAsset(stored.storageKey, stored.provider);
+      throw error;
+    }
+    await removeAvatarAsset(previousStorageKey, previousProvider);
+    return { avatar: account.avatar };
+  },
+
+  async removeAvatar(user) {
+    const account = await User.findById(user._id).select('+avatarStorageKey +avatarStorageProvider');
+    if (!account) throw ApiError.notFound('Account not found');
+    const previousStorageKey = account.avatarStorageKey;
+    const previousProvider = account.avatarStorageProvider;
+    account.avatar = '';
+    account.avatarStorageKey = '';
+    account.avatarStorageProvider = 'local';
+    await account.save();
+    const cleanup = await removeAvatarAsset(previousStorageKey, previousProvider);
+    return { avatar: '', remoteCopyMayRemain: cleanup?.remoteCopyMayRemain === true };
+  },
+
   async uploadCv(user, file) {
     if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can upload a CV');
     if (!file?.buffer) throw ApiError.badRequest('Attach a CV document');
@@ -125,7 +159,7 @@ export const profileService = {
   async getPublicFreelancer(userId) {
     if (!mongoose.isValidObjectId(userId)) throw ApiError.notFound('Freelancer profile not found');
     const profile = await FreelancerProfile.findOne({ user: userId, visibility: 'public', onboardingCompleted: true })
-      .populate('user', 'name role status');
+      .populate('user', 'name avatar role status');
     if (!profile || !profile.user || profile.user.status !== 'active') throw ApiError.notFound('Freelancer profile not found');
     return profile;
   },
@@ -145,7 +179,7 @@ export const profileService = {
     }[sort] || { updatedAt: -1 };
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      FreelancerProfile.find(filter).populate('user', 'name role status').sort(sortBy).skip(skip).limit(limit),
+      FreelancerProfile.find(filter).populate('user', 'name avatar role status').sort(sortBy).skip(skip).limit(limit),
       FreelancerProfile.countDocuments(filter),
     ]);
     return { items: items.filter((profile) => profile.user?.status === 'active'), page, limit, total };

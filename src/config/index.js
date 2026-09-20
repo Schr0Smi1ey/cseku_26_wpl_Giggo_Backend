@@ -27,6 +27,11 @@ export const config = {
   storage: {
     verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
     cvMaxFileMb: numberFromEnv('CV_MAX_FILE_MB', 10),
+    avatarMaxFileMb: numberFromEnv('AVATAR_MAX_FILE_MB', 5),
+    avatarUploadDir: process.env.AVATAR_UPLOAD_DIR || '',
+    avatarProvider: isTest ? 'local' : process.env.AVATAR_STORAGE_PROVIDER || (process.env.IMGBB_API_KEY ? 'imgbb' : 'local'),
+    imgbbApiKey: process.env.IMGBB_API_KEY || '',
+    imgbbUploadTimeoutMs: numberFromEnv('IMGBB_UPLOAD_TIMEOUT_MS', 15000),
     uploadDir: process.env.UPLOAD_DIR || '',
   },
   ai: {

@@ -2,7 +2,7 @@ import { Job } from '../models/Job.js';
 import { SavedJob } from '../models/SavedJob.js';
 import { ApiError } from '../utils/ApiError.js';
 
-const clientSelect = 'name role status';
+const clientSelect = 'name avatar role status';
 const paginate = async (query, count, { page = 1, limit = 12 }) => { const [items, total] = await Promise.all([query.skip((page - 1) * limit).limit(limit), count]); return { items, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } }; };
 async function owned(user, id) { const job = await Job.findById(id); if (!job) throw ApiError.notFound('Job not found'); if (String(job.client) !== String(user._id)) throw ApiError.forbidden('You do not own this job'); return job; }
 export const jobService = {

@@ -111,7 +111,7 @@ export const verificationService = {
     if (type) filter.type = type;
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      VerificationRequest.find(filter).populate('user', 'name email role').sort({ createdAt: 1 }).skip(skip).limit(limit),
+      VerificationRequest.find(filter).populate('user', 'name avatar email role').sort({ createdAt: 1 }).skip(skip).limit(limit),
       VerificationRequest.countDocuments(filter),
     ]);
     return { items, page, limit, total };
