@@ -3,6 +3,7 @@ import { VerificationRequest } from '../models/VerificationRequest.js';
 import { ApiError } from '../utils/ApiError.js';
 import { approvedTypesFor, deriveBadges, syncUserBadges } from './verification.badges.js';
 import { readVerificationDocument, removeVerificationDocument, storeVerificationDocument } from './verification.storage.service.js';
+import { notificationService } from './notification.service.js';
 
 const phoneCodes = new Map();
 const phoneCodeTtlMs = 10 * 60 * 1000;
@@ -111,7 +112,7 @@ export const verificationService = {
     if (type) filter.type = type;
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      VerificationRequest.find(filter).populate('user', 'name email role').sort({ createdAt: 1 }).skip(skip).limit(limit),
+      VerificationRequest.find(filter).populate('user', 'name avatar email role').sort({ createdAt: 1 }).skip(skip).limit(limit),
       VerificationRequest.countDocuments(filter),
     ]);
     return { items, page, limit, total };
@@ -130,6 +131,19 @@ export const verificationService = {
       throw ApiError.badRequest('Verification request has already been reviewed');
     }
     await syncUserBadges(request.user);
+    await notificationService.publish({
+      recipient: request.user,
+      actor: admin._id,
+      eventKey: `verification:${request._id}:${status}`,
+      type: 'verification_decided',
+      category: 'verification',
+      title: `Verification request ${status}`,
+      body: request.reviewNote || `Your ${request.type} verification request was ${status}.`,
+      actionUrl: '/dashboard/verification',
+      entityType: 'verification',
+      entityId: request._id,
+      metadata: { status, verificationType: request.type },
+    }).catch(() => null);
     return request;
   },
 
@@ -144,4 +158,8 @@ export const verificationService = {
 
 export function resetVerificationTestState() {
   phoneCodes.clear();
+}
+
+export function clearVerificationStateForUser(userId) {
+  phoneCodes.delete(String(userId));
 }

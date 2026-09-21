@@ -13,3 +13,9 @@ export const analysisQuerySchema = z.object({
 }).strict();
 
 export const analysisIdSchema = z.object({ id: objectId }).strict();
+
+export const proposalDraftSchema = z.object({
+  job: objectId,
+  tone: z.enum(['professional', 'friendly', 'concise']).optional().default('professional'),
+  notes: z.string().trim().max(1000).optional().default(''),
+}).strict();

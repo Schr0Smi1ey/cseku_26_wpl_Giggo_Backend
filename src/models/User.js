@@ -16,11 +16,14 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: Object.values(ROLES), required: true },
     roles: { type: [String], enum: Object.values(ROLES), required: true },
     phone: { type: String, trim: true, maxlength: 20, default: '' },
+    avatar: { type: String, trim: true, maxlength: 500, default: '' },
+    avatarStorageKey: { type: String, trim: true, maxlength: 500, default: '', select: false },
+    avatarStorageProvider: { type: String, enum: ['local', 'imgbb'], default: 'local', select: false },
     emailVerified: { type: Boolean, default: false },
     phoneVerified: { type: Boolean, default: false },
     emailVerificationTokenHash: { type: String, select: false, default: '' },
     emailVerificationExpiresAt: { type: Date, select: false },
-    status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' },
+    status: { type: String, enum: ['active', 'suspended', 'banned', 'deletion_pending'], default: 'active' },
     lastActiveAt: { type: Date },
   },
   { timestamps: true, versionKey: false },
@@ -41,6 +44,8 @@ userSchema.methods.hasRole = function hasRole(role) {
 userSchema.methods.toJSON = function toJSON() {
   const user = this.toObject();
   delete user.passwordHash;
+  delete user.avatarStorageKey;
+  delete user.avatarStorageProvider;
   delete user.emailVerificationTokenHash;
   delete user.emailVerificationExpiresAt;
   return user;

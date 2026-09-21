@@ -18,7 +18,17 @@ export function errorHandler(error, _req, res, _next) {
   }
 
   const status = error instanceof ApiError ? error.status : 500;
-  if (status === 500) console.error('API request failed', { name: error?.name, code: error?.code, codeName: error?.codeName });
+  if (status === 500) {
+    console.error('API request failed', {
+      name: error?.name,
+      code: error?.code,
+      codeName: error?.codeName,
+      path: error?.path,
+      kind: error?.kind,
+      valueType: error?.value === null ? 'null' : typeof error?.value,
+      valueKeys: error?.value && typeof error.value === 'object' ? Object.keys(error.value) : [],
+    });
+  }
   const code = error instanceof ApiError ? error.code : 'INTERNAL_ERROR';
   const message = error instanceof ApiError ? error.message : 'An unexpected server error occurred';
   return res.status(status).json({ success: false, message, error: { code } });

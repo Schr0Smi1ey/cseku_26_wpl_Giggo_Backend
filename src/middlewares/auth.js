@@ -8,6 +8,7 @@ export const requireAuth = async (req, _res, next) => {
 
     const identity = await verifySupabaseAccessToken(header.slice(7));
     req.user = await syncSupabaseUser(identity);
+    req.authIdentity = identity;
     next();
   } catch (error) {
     next(error);
@@ -20,7 +21,9 @@ export const optionalAuth = async (req, _res, next) => {
   if (!header) return next();
   if (!header.startsWith('Bearer ')) return next(ApiError.unauthorized('Invalid access token'));
   try {
-    req.user = await syncSupabaseUser(await verifySupabaseAccessToken(header.slice(7)));
+    const identity = await verifySupabaseAccessToken(header.slice(7));
+    req.user = await syncSupabaseUser(identity);
+    req.authIdentity = identity;
     return next();
   } catch (error) { return next(error); }
 };

@@ -4,8 +4,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ClientProfile } from '../models/ClientProfile.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
-import { ROLES } from '../models/User.js';
+import { ROLES, User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
+import { removeAvatarAsset, storeAvatar } from './avatar.storage.service.js';
 
 const freelancerFields = ['title', 'overview', 'category', 'hourlyRate', 'availability', 'skills', 'languages', 'location', 'links', 'education', 'experience', 'certifications', 'portfolio', 'visibility'];
 const clientFields = ['companyName', 'companyDescription', 'industry', 'website', 'teamSize', 'location'];
@@ -14,6 +15,20 @@ const cvExtensions = new Map([
   ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'],
   ['text/plain', '.txt'],
 ]);
+
+function cvDirectory() {
+  return path.resolve(process.env.UPLOAD_DIR || path.join('.runtime', 'cvs'));
+}
+
+function isInsideCvDirectory(filePath) {
+  const relative = path.relative(cvDirectory(), path.resolve(filePath));
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+export async function removeCvFile(storageKey) {
+  if (!storageKey || !isInsideCvDirectory(storageKey)) return;
+  await fs.rm(storageKey, { force: true });
+}
 
 function profileTypeFor(user) {
   if (user.role === ROLES.FREELANCER) return 'freelancer';
@@ -80,6 +95,39 @@ export const profileService = {
     return { profile, type };
   },
 
+  async uploadAvatar(user, file) {
+    const account = await User.findById(user._id).select('+avatarStorageKey +avatarStorageProvider');
+    if (!account) throw ApiError.notFound('Account not found');
+
+    const stored = await storeAvatar(file);
+    const previousStorageKey = account.avatarStorageKey;
+    const previousProvider = account.avatarStorageProvider;
+    account.avatar = stored.url;
+    account.avatarStorageKey = stored.storageKey;
+    account.avatarStorageProvider = stored.provider;
+    try {
+      await account.save();
+    } catch (error) {
+      await removeAvatarAsset(stored.storageKey, stored.provider);
+      throw error;
+    }
+    await removeAvatarAsset(previousStorageKey, previousProvider);
+    return { avatar: account.avatar };
+  },
+
+  async removeAvatar(user) {
+    const account = await User.findById(user._id).select('+avatarStorageKey +avatarStorageProvider');
+    if (!account) throw ApiError.notFound('Account not found');
+    const previousStorageKey = account.avatarStorageKey;
+    const previousProvider = account.avatarStorageProvider;
+    account.avatar = '';
+    account.avatarStorageKey = '';
+    account.avatarStorageProvider = 'local';
+    await account.save();
+    const cleanup = await removeAvatarAsset(previousStorageKey, previousProvider);
+    return { avatar: '', remoteCopyMayRemain: cleanup?.remoteCopyMayRemain === true };
+  },
+
   async uploadCv(user, file) {
     if (profileTypeFor(user) !== 'freelancer') throw ApiError.forbidden('Only freelancers can upload a CV');
     if (!file?.buffer) throw ApiError.badRequest('Attach a CV document');
@@ -88,7 +136,7 @@ export const profileService = {
     if (!extension) throw ApiError.badRequest('Only PDF, DOCX, and TXT CV files are accepted');
 
     const { profile } = await getOrCreate(user);
-    const root = process.env.UPLOAD_DIR || path.resolve('.runtime', 'cvs');
+    const root = cvDirectory();
     const storageKey = path.join(root, `${user._id}-${crypto.randomUUID()}${extension}`);
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(storageKey, file.buffer, { flag: 'wx' });
@@ -105,10 +153,10 @@ export const profileService = {
     try {
       await profile.save();
     } catch (error) {
-      await fs.unlink(storageKey).catch(() => {});
+      await removeCvFile(storageKey).catch(() => {});
       throw error;
     }
-    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    await removeCvFile(previousKey);
     return { profile, type: 'freelancer' };
   },
 
@@ -118,14 +166,14 @@ export const profileService = {
     const previousKey = profile.cv?.storageKey;
     profile.cv = { filename: '', mimeType: '', size: 0, storageKey: '', uploadedAt: null };
     await profile.save();
-    if (previousKey) await fs.unlink(previousKey).catch(() => {});
+    await removeCvFile(previousKey);
     return { profile, type: 'freelancer' };
   },
 
   async getPublicFreelancer(userId) {
     if (!mongoose.isValidObjectId(userId)) throw ApiError.notFound('Freelancer profile not found');
-    const profile = await FreelancerProfile.findOne({ user: userId, visibility: 'public', onboardingCompleted: true })
-      .populate('user', 'name role status');
+    const profile = await FreelancerProfile.findOne({ user: userId, visibility: 'public' })
+      .populate('user', 'name avatar role status');
     if (!profile || !profile.user || profile.user.status !== 'active') throw ApiError.notFound('Freelancer profile not found');
     return profile;
   },
@@ -145,7 +193,7 @@ export const profileService = {
     }[sort] || { updatedAt: -1 };
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      FreelancerProfile.find(filter).populate('user', 'name role status').sort(sortBy).skip(skip).limit(limit),
+      FreelancerProfile.find(filter).populate('user', 'name avatar role status').sort(sortBy).skip(skip).limit(limit),
       FreelancerProfile.countDocuments(filter),
     ]);
     return { items: items.filter((profile) => profile.user?.status === 'active'), page, limit, total };
