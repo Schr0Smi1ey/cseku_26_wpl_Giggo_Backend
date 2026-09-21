@@ -6,6 +6,8 @@ import aiRoutes from './ai.routes.js';
 import jobRoutes from './job.routes.js';
 import proposalRoutes from './proposal.routes.js';
 import offerRoutes from './offer.routes.js';
+import conversationRoutes from './conversation.routes.js';
+import notificationRoutes from './notification.routes.js';
 
 const router = Router();
 
@@ -17,5 +19,7 @@ router.use('/ai', aiRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/proposals', proposalRoutes);
 router.use('/offers', offerRoutes);
+router.use('/conversations', conversationRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router;

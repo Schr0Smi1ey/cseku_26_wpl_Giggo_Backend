@@ -1,10 +1,17 @@
+import crypto from 'node:crypto';
 import mongoose from 'mongoose';
+import { Conversation } from '../models/Conversation.js';
 import { Job } from '../models/Job.js';
+import { Message } from '../models/Message.js';
 import { Offer } from '../models/Offer.js';
 import { OfferMessage } from '../models/OfferMessage.js';
 import { OfferRevision } from '../models/OfferRevision.js';
 import { Proposal } from '../models/Proposal.js';
 import { ApiError } from '../utils/ApiError.js';
+import { containsExternalContact } from '../utils/contact-policy.js';
+import { notificationService } from './notification.service.js';
+import { conversationService } from './conversation.service.js';
+import { emitToConversation } from './realtime.service.js';
 
 const ACTIVE_STATUSES = ['draft', 'sent', 'changes_requested', 'revising'];
 const EDITABLE_STATUSES = ['draft', 'sent', 'changes_requested', 'revising'];
@@ -12,9 +19,6 @@ const USER_SELECT = 'name avatar role status';
 const JOB_SELECT = 'title status budget client hiredProposal';
 const PROPOSAL_SELECT = 'job freelancer client bid estimatedDays milestones status';
 const TERM_FIELDS = ['title', 'description', 'budget', 'estimatedDays', 'startDate', 'endDate', 'expiresAt', 'terms', 'milestones'];
-const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
-const PHONE_PATTERN = /(?:\+\d{1,3}[\s-]?)?(?:\d[\s-]){2,}\d{4,}/;
-const EXTERNAL_MESSENGER_PATTERN = /\b(?:whats?app|telegram|discord|skype|imo|viber)\b/i;
 
 function id(value) {
   return String(value?._id || value);
@@ -66,19 +70,104 @@ function mergedTerms(offer, patch) {
   return Object.fromEntries(TERM_FIELDS.map((field) => [field, patch[field] ?? current[field]]));
 }
 
-function containsExternalContact(value) {
-  return EMAIL_PATTERN.test(value) || PHONE_PATTERN.test(value) || EXTERNAL_MESSENGER_PATTERN.test(value);
+async function ensureOfferConversation(offer) {
+  await Promise.all([Conversation.init(), Message.init()]);
+  let conversation = await Conversation.findOne({ contextType: 'offer', contextId: offer._id });
+  if (!conversation) {
+    try {
+      conversation = await Conversation.create({
+        type: 'offer',
+        title: offer.title || 'Offer negotiation',
+        createdBy: offer.client,
+        participantIds: [offer.client, offer.freelancer],
+        participants: [
+          { user: offer.client, role: 'owner' },
+          { user: offer.freelancer, role: 'member' },
+        ],
+        contextType: 'offer',
+        contextId: offer._id,
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      conversation = await Conversation.findOne({ contextType: 'offer', contextId: offer._id });
+    }
+  }
+
+  const legacyMessages = await OfferMessage.find({ offer: offer._id }).sort({ createdAt: 1 }).lean();
+  if (legacyMessages.length) {
+    try {
+      await Message.bulkWrite(legacyMessages.map((legacy) => ({
+        updateOne: {
+          filter: { conversation: conversation._id, 'metadata.legacyOfferMessageId': String(legacy._id) },
+          update: {
+            $setOnInsert: {
+              conversation: conversation._id,
+              sender: legacy.sender,
+              kind: legacy.kind === 'system' ? 'system' : 'text',
+              body: legacy.body,
+              metadata: {
+                legacyOfferMessageId: String(legacy._id),
+                offerId: String(offer._id),
+                offerKind: legacy.kind,
+                senderRole: legacy.senderRole,
+                revision: legacy.revision,
+              },
+              createdAt: legacy.createdAt,
+            },
+          },
+          upsert: true,
+        },
+      })), { ordered: false });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
+  }
+  const latest = await Message.findOne({ conversation: conversation._id }).sort({ _id: -1 }).select('_id createdAt');
+  if (latest && (!conversation.lastMessage || id(conversation.lastMessage) !== id(latest))) {
+    conversation.lastMessage = latest._id;
+    conversation.lastMessageAt = latest.createdAt;
+    conversation.activityAt = latest.createdAt;
+    await conversation.save();
+  }
+  return conversation;
+}
+
+async function createTimelineMessage(offer, { sender = null, senderRole = 'system', kind = 'system', body, revision = offer.revision }) {
+  const conversation = await ensureOfferConversation(offer);
+  const message = await Message.create({
+    conversation: conversation._id,
+    sender,
+    kind: kind === 'system' ? 'system' : 'text',
+    body,
+    metadata: { offerId: String(offer._id), offerKind: kind, senderRole, revision: revision || null },
+  });
+  conversation.lastMessage = message._id;
+  conversation.lastMessageAt = message.createdAt;
+  conversation.activityAt = message.createdAt;
+  await conversation.save();
+  await message.populate('sender', USER_SELECT);
+  emitToConversation(conversation._id, 'message:new', { conversationId: id(conversation), message });
+  return message;
 }
 
 async function createSystemMessage(offer, body, revision = offer.revision) {
-  return OfferMessage.create({
-    offer: offer._id,
-    sender: null,
-    senderRole: 'system',
-    kind: 'system',
+  return createTimelineMessage(offer, { body, revision });
+}
+
+async function publishOfferNotification({ offer, recipient, actor, event, type, title, body }) {
+  return notificationService.publish({
+    recipient,
+    actor,
+    eventKey: `offer:${offer._id}:${event}`,
+    type,
+    category: 'offers',
+    title,
     body,
-    revision: revision || null,
-  });
+    actionUrl: `/dashboard/offers/${offer._id}`,
+    entityType: 'offer',
+    entityId: offer._id,
+    metadata: { status: offer.status, revision: offer.revision },
+  }).catch(() => null);
 }
 
 async function createPublishedRevision(offer, publishedAt = new Date()) {
@@ -176,16 +265,23 @@ async function populatedOffer(user, offerId, includeHistory = false) {
   await ensurePublishedRevision(offer);
   const [item] = await offerViews(user, [offer]);
   if (!includeHistory) return item;
+  const conversation = offer.sentAt || offer.status !== 'draft' ? await ensureOfferConversation(offer) : null;
   const [revisions, newestMessages] = await Promise.all([
     OfferRevision.find({ offer: offer._id }).sort({ number: -1 }).lean(),
-    OfferMessage.find({ offer: offer._id })
+    conversation ? Message.find({ conversation: conversation._id })
       .sort({ createdAt: -1 })
       .limit(200)
       .populate('sender', USER_SELECT)
-      .lean(),
+      .lean() : [],
   ]);
   item.revisions = revisions;
-  item.messages = newestMessages.reverse();
+  item.conversationId = conversation?._id || null;
+  item.messages = newestMessages.reverse().map((message) => ({
+    ...message,
+    kind: message.metadata?.offerKind || message.kind,
+    senderRole: message.metadata?.senderRole || (message.kind === 'system' ? 'system' : null),
+    revision: message.metadata?.revision || null,
+  }));
   return item;
 }
 
@@ -298,6 +394,15 @@ export const offerService = {
       throw ApiError.conflict('The offer changed before it could be sent');
     }
     await createSystemMessage(sent, `Client sent offer revision ${sent.revision}.`, sent.revision);
+    await publishOfferNotification({
+      offer: sent,
+      recipient: sent.freelancer,
+      actor: user._id,
+      event: `sent:${sent.revision}`,
+      type: 'offer_sent',
+      title: `Offer revision ${sent.revision} is ready`,
+      body: `${user.name} sent terms for your review.`,
+    });
     return populatedOffer(user, sent._id, true);
   },
 
@@ -312,13 +417,15 @@ export const offerService = {
       { new: true, runValidators: true },
     );
     if (!updated) throw ApiError.badRequest('This offer is no longer awaiting your response');
-    await OfferMessage.create({
-      offer: updated._id,
-      sender: user._id,
-      senderRole: 'freelancer',
-      kind: 'change_request',
-      body: message,
-      revision: updated.revision,
+    await createTimelineMessage(updated, { sender: user._id, senderRole: 'freelancer', kind: 'change_request', body: message, revision: updated.revision });
+    await publishOfferNotification({
+      offer: updated,
+      recipient: updated.client,
+      actor: user._id,
+      event: `changes-requested:${updated.revision}`,
+      type: 'offer_changes_requested',
+      title: 'Changes requested on your offer',
+      body: message.slice(0, 160),
     });
     return populatedOffer(user, updated._id, true);
   },
@@ -331,15 +438,12 @@ export const offerService = {
       throw ApiError.badRequest('Keep contact details on Giggo until the offer is accepted');
     }
     const senderRole = id(offer.client) === id(user) ? 'client' : 'freelancer';
-    const message = await OfferMessage.create({
-      offer: offer._id,
-      sender: user._id,
-      senderRole,
-      kind: 'message',
+    const conversation = await ensureOfferConversation(offer);
+    const message = await conversationService.send(user, conversation._id, {
       body,
-      revision: offer.currentRevision ? Math.max(1, offer.revision) : null,
+      clientMessageId: crypto.randomUUID(),
+      metadata: { offerId: String(offer._id), offerKind: 'message', senderRole, revision: offer.currentRevision ? Math.max(1, offer.revision) : null },
     });
-    await message.populate('sender', USER_SELECT);
     return message;
   },
 
@@ -353,6 +457,7 @@ export const offerService = {
     );
     if (!updated) throw ApiError.badRequest('This offer can no longer be declined');
     await createSystemMessage(updated, 'Freelancer declined the offer.');
+    await publishOfferNotification({ offer: updated, recipient: updated.client, actor: user._id, event: 'rejected', type: 'offer_rejected', title: 'Offer declined', body: `${user.name} declined the offer.` });
     return populatedOffer(user, updated._id, true);
   },
 
@@ -365,6 +470,7 @@ export const offerService = {
     );
     if (!updated) throw ApiError.badRequest('This offer can no longer be withdrawn');
     if (updated.sentAt) await createSystemMessage(updated, 'Client withdrew the offer.');
+    if (updated.sentAt) await publishOfferNotification({ offer: updated, recipient: updated.freelancer, actor: user._id, event: 'withdrawn', type: 'offer_withdrawn', title: 'Offer withdrawn', body: `${user.name} withdrew the offer.` });
     return populatedOffer(user, updated._id, true);
   },
 
@@ -437,6 +543,7 @@ export const offerService = {
       ),
     ]);
     await createSystemMessage(accepted, `Freelancer accepted offer revision ${published.number}.`, published.number);
+    await publishOfferNotification({ offer: accepted, recipient: accepted.client, actor: user._id, event: `accepted:${published.number}`, type: 'offer_accepted', title: 'Offer accepted', body: `${user.name} accepted revision ${published.number}.` });
     return populatedOffer(user, accepted._id, true);
   },
 };
