@@ -9,6 +9,19 @@ const connectionCounts = new Map();
 
 const online = (userId) => (connectionCounts.get(String(userId)) || 0) > 0;
 
+function runBackground(task, label) {
+  void task.catch((error) => {
+    // Shutdown can close MongoDB before Socket.IO finishes its disconnect
+    // callbacks. That expected race must not become an unhandled rejection.
+    if (error?.name === 'MongoClientClosedError') return;
+    console.error('Realtime background task failed', {
+      label,
+      errorName: error?.name,
+      errorCode: error?.code,
+    });
+  });
+}
+
 async function broadcastPresence(io, userId, isOnline) {
   const conversationIds = await Conversation.find({ participantIds: userId }).distinct('_id');
   for (const conversationId of conversationIds) {
@@ -50,7 +63,7 @@ export function createRealtimeServer(httpServer) {
     const previous = connectionCounts.get(userId) || 0;
     connectionCounts.set(userId, previous + 1);
     socket.join(`user:${userId}`);
-    if (previous === 0) void broadcastPresence(io, userId, true);
+    if (previous === 0) runBackground(broadcastPresence(io, userId, true), 'presence-online');
 
     socket.on('conversation:join', async ({ conversationId } = {}, acknowledge) => {
       const conversation = await authorizedConversation(userId, conversationId);
@@ -67,8 +80,8 @@ export function createRealtimeServer(httpServer) {
       if (!conversation || !socket.rooms.has(`conversation:${conversationId}`)) return;
       socket.to(`conversation:${conversationId}`).emit(event, { conversationId, userId });
     };
-    socket.on('typing:start', (payload) => { void typing('typing:start', payload); });
-    socket.on('typing:stop', (payload) => { void typing('typing:stop', payload); });
+    socket.on('typing:start', (payload) => runBackground(typing('typing:start', payload), 'typing-start'));
+    socket.on('typing:stop', (payload) => runBackground(typing('typing:stop', payload), 'typing-stop'));
 
     socket.on('conversation:read', async ({ conversationId } = {}, acknowledge) => {
       try {
@@ -83,7 +96,7 @@ export function createRealtimeServer(httpServer) {
       const next = Math.max(0, (connectionCounts.get(userId) || 1) - 1);
       if (next === 0) {
         connectionCounts.delete(userId);
-        void broadcastPresence(io, userId, false);
+        runBackground(broadcastPresence(io, userId, false), 'presence-offline');
       } else connectionCounts.set(userId, next);
     });
   });
