@@ -27,6 +27,11 @@ export const config = {
   storage: {
     verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
     cvMaxFileMb: numberFromEnv('CV_MAX_FILE_MB', 10),
+    avatarMaxFileMb: numberFromEnv('AVATAR_MAX_FILE_MB', 5),
+    avatarUploadDir: process.env.AVATAR_UPLOAD_DIR || '',
+    avatarProvider: isTest ? 'local' : process.env.AVATAR_STORAGE_PROVIDER || (process.env.IMGBB_API_KEY ? 'imgbb' : 'local'),
+    imgbbApiKey: process.env.IMGBB_API_KEY || '',
+    imgbbUploadTimeoutMs: numberFromEnv('IMGBB_UPLOAD_TIMEOUT_MS', 15000),
     uploadDir: process.env.UPLOAD_DIR || '',
   },
   ai: {
@@ -35,6 +40,8 @@ export const config = {
   },
   supabase: {
     url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    adminTimeoutMs: numberFromEnv('SUPABASE_ADMIN_TIMEOUT_MS', 10000),
   },
   jwt: {
     accessSecret: process.env.JWT_SECRET || (isTest ? 'test-access-secret' : 'dev-access-secret-change-me'),

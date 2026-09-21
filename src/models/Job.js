@@ -6,6 +6,7 @@ const jobSchema = new mongoose.Schema({
   description: { type: String, required: true, trim: true, minlength: 20, maxlength: 10000 }, category: { type: String, required: true, trim: true, maxlength: 80, index: true }, skills: { type: [String], default: [] },
   budget: { type: budgetSchema, default: () => ({}) }, experienceLevel: { type: String, enum: ['entry', 'intermediate', 'expert'], default: 'intermediate' }, duration: { type: String, enum: ['short', 'medium', 'long'], default: 'medium' },
   status: { type: String, enum: ['draft', 'open', 'closed', 'filled'], default: 'open', index: true }, savedCount: { type: Number, min: 0, default: 0 },
+  hiredProposal: { type: mongoose.Schema.Types.ObjectId, ref: 'Proposal', default: null },
 }, { timestamps: true, versionKey: false });
 jobSchema.index({ title: 'text', description: 'text', skills: 'text' });
 jobSchema.index({ status: 1, createdAt: -1 });

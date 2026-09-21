@@ -41,6 +41,20 @@ const cvUpload = multer({
 
 export const uploadCvDocument = cvUpload.single('document');
 
+const avatarMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: config.storage.avatarMaxFileMb * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!avatarMimeTypes.has(file.mimetype)) {
+      return callback(ApiError.badRequest('Only JPEG, PNG, and WebP profile photos are accepted'));
+    }
+    return callback(null, true);
+  },
+});
+
+export const uploadAvatarImage = avatarUpload.single('image');
+
 export function handleUploadError(error, _req, _res, next) {
   if (!error) return next();
   if (error.code === 'LIMIT_FILE_SIZE') return next(new ApiError(413, `Each document must be ${config.storage.verificationMaxFileMb} MB or smaller`, 'FILE_TOO_LARGE'));
@@ -55,5 +69,14 @@ export function handleCvUploadError(error, _req, _res, next) {
     return next(new ApiError(413, `CV must be ${config.storage.cvMaxFileMb} MB or smaller`, 'FILE_TOO_LARGE'));
   }
   if (error instanceof multer.MulterError) return next(ApiError.badRequest('Invalid CV upload'));
+  return next(error);
+}
+
+export function handleAvatarUploadError(error, _req, _res, next) {
+  if (!error) return next();
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return next(new ApiError(413, `Profile photo must be ${config.storage.avatarMaxFileMb} MB or smaller`, 'FILE_TOO_LARGE'));
+  }
+  if (error instanceof multer.MulterError) return next(ApiError.badRequest('Invalid profile photo upload'));
   return next(error);
 }

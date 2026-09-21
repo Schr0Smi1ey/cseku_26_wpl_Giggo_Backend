@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
-import { analyzeCvText } from '../integrations/ai/index.js';
+import { analyzeCvText, draftProposalText } from '../integrations/ai/index.js';
 import { AIAnalysis } from '../models/AIAnalysis.js';
+import { AIUsage } from '../models/AIUsage.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
+import { Job } from '../models/Job.js';
 import { config } from '../config/index.js';
 import { extractCvText } from '../utils/cv-text.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -89,5 +91,17 @@ export const aiService = {
     profile.skills.push(...added);
     await profile.save();
     return { profile, added };
+  },
+
+  async draftProposal(user, { job: jobId, tone, notes }) {
+    const job = await Job.findById(jobId);
+    if (!job) throw ApiError.notFound('Job not found');
+    if (String(job.client) === String(user._id)) throw ApiError.badRequest('You cannot draft a proposal for your own job');
+    if (job.status !== 'open') throw ApiError.badRequest('This job is not accepting proposals');
+
+    const profile = await FreelancerProfile.findOne({ user: user._id });
+    const { provider, result } = await draftProposalText(job, profile, tone, notes);
+    await AIUsage.create({ user: user._id, feature: 'proposal_draft', provider });
+    return { ...result, provider };
   },
 };
