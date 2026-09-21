@@ -1,7 +1,8 @@
 # Giggo Backend
 
 Giggo currently implements Supabase-authenticated accounts, role-specific
-profiles, CV analysis, verification, jobs, proposals, and offer negotiation.
+profiles, CV analysis, verification, jobs, proposals, offer negotiation,
+real-time messaging, and in-app notifications.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
 2. Run `npm install`.
@@ -22,8 +23,9 @@ MongoDB instance. Use a real MongoDB URI when persistent local data is needed.
 
 Permanent account deletion requires a recently issued Supabase session and the
 exact confirmation text `DELETE`. The backend removes the Supabase identity and
-Giggo-owned profile, CV, analysis, verification, job, saved-job, and session
-records. Configure `SUPABASE_SERVICE_ROLE_KEY` only in the backend's ignored
+Giggo-owned profile, CV, analysis, verification, job, saved-job, private
+conversation, notification, and session records. Retained group history is
+redacted for the departing member. Configure `SUPABASE_SERVICE_ROLE_KEY` only in the backend's ignored
 `.env`; never put it in a Vite variable or frontend repository. Administrator
 accounts cannot use this self-service deletion route. If an ImgBB avatar was
 used, Giggo detaches it but cannot confirm deletion of the provider's copy.
@@ -127,3 +129,29 @@ For installations that already contain sent offers from the earlier mutable
 schema, run `npm run migrate:offer-history` once. It preserves each offer's
 currently stored terms as its first available immutable snapshot; terms that
 were overwritten before this migration cannot be reconstructed.
+
+## Messaging and notification endpoints
+
+- Conversations: `GET|POST /api/conversations`
+- Contacts: `GET /api/conversations/contacts`
+- Conversation state: `GET /api/conversations/:conversationId`,
+  `PATCH /api/conversations/:conversationId/settings`
+- History and read state: `GET|POST /api/conversations/:conversationId/messages`,
+  `POST /api/conversations/:conversationId/read`
+- Message controls: `PATCH|DELETE /api/conversations/messages/:messageId`, plus
+  `/reaction`, `/pin`, and `/save`
+- Group membership: `POST /api/conversations/:conversationId/participants` and
+  `DELETE /api/conversations/:conversationId/participants/:userId`
+- Notifications: `GET /api/notifications`, `POST /api/notifications/read-all`,
+  and per-item `/read` and `/archive`
+- Preferences: `GET|PATCH /api/notifications/preferences/me`
+
+Socket.IO connections authenticate with the same Supabase bearer token in the
+handshake `auth.token`. Clients join authorized `conversation:<id>` rooms
+through `conversation:join`; live message, typing, read-state, and presence
+events complement the REST history API. A caller-provided `clientMessageId`
+makes message retries idempotent. Offer negotiations use the same message
+stream and keep their pre-acceptance contact-sharing rule.
+
+File attachments remain disabled until storage authorization, malware
+scanning, retention, and deletion behavior are defined and tested.

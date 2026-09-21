@@ -2,15 +2,20 @@ import mongoose from 'mongoose';
 import { AIAnalysis } from '../models/AIAnalysis.js';
 import { AIUsage } from '../models/AIUsage.js';
 import { ClientProfile } from '../models/ClientProfile.js';
+import { Conversation } from '../models/Conversation.js';
 import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { Job } from '../models/Job.js';
+import { Message } from '../models/Message.js';
+import { Notification } from '../models/Notification.js';
+import { NotificationPreference } from '../models/NotificationPreference.js';
 import { Offer } from '../models/Offer.js';
 import { OfferMessage } from '../models/OfferMessage.js';
 import { OfferRevision } from '../models/OfferRevision.js';
 import { Proposal } from '../models/Proposal.js';
 import { RefreshToken } from '../models/RefreshToken.js';
 import { SavedJob } from '../models/SavedJob.js';
+import { SavedMessage } from '../models/SavedMessage.js';
 import { ROLES, User } from '../models/User.js';
 import { VerificationRequest } from '../models/VerificationRequest.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -73,6 +78,10 @@ export const accountDeletionService = {
     ]);
     const ownedJobIds = ownedJobs.map((job) => job._id);
     const relatedOfferIds = relatedOffers.map((offer) => offer._id);
+    const relatedConversations = await Conversation.find({ participantIds: account._id }).select('_id type');
+    const removedConversationIds = relatedConversations.filter((conversation) => conversation.type !== 'group').map((conversation) => conversation._id);
+    const retainedGroupIds = relatedConversations.filter((conversation) => conversation.type === 'group').map((conversation) => conversation._id);
+    const removedMessageIds = await Message.find({ conversation: mongoose.trusted({ $in: removedConversationIds }) }).distinct('_id');
     const savedJobsFilter = ownedJobIds.length
       ? { $or: [{ user: account._id }, { job: mongoose.trusted({ $in: ownedJobIds }) }] }
       : { user: account._id };
@@ -84,13 +93,35 @@ export const accountDeletionService = {
       FreelancerProfile.deleteMany({ user: account._id }),
       RefreshToken.deleteMany({ user: account._id }),
       SavedJob.deleteMany(savedJobsFilter),
+      SavedMessage.deleteMany({ $or: [{ user: account._id }, { message: mongoose.trusted({ $in: removedMessageIds }) }] }),
+      NotificationPreference.deleteMany({ user: account._id }),
+      Notification.deleteMany({ $or: [
+        { recipient: account._id },
+        { entityType: 'conversation', entityId: mongoose.trusted({ $in: removedConversationIds }) },
+        { entityType: 'offer', entityId: mongoose.trusted({ $in: relatedOfferIds }) },
+      ] }),
       VerificationRequest.deleteMany({ user: account._id }),
       Job.deleteMany({ client: account._id }),
       OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Proposal.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
+      Message.deleteMany({ conversation: mongoose.trusted({ $in: removedConversationIds }) }),
+      Conversation.deleteMany({ _id: mongoose.trusted({ $in: removedConversationIds }) }),
+      Message.updateMany(
+        { conversation: mongoose.trusted({ $in: retainedGroupIds }), sender: account._id },
+        { $set: { sender: null, body: '', deletedAt: new Date(), reactions: [], pinnedBy: [] } },
+      ),
+      Message.updateMany(
+        { conversation: mongoose.trusted({ $in: retainedGroupIds }) },
+        { $pull: { reactions: { user: account._id }, pinnedBy: account._id } },
+      ),
+      Conversation.updateMany(
+        { _id: mongoose.trusted({ $in: retainedGroupIds }) },
+        { $pull: { participantIds: account._id, participants: { user: account._id } } },
+      ),
     ]);
+    await Notification.updateMany({ actor: account._id }, { $set: { actor: null } });
     await User.deleteOne({ _id: account._id });
     clearVerificationStateForUser(account._id);
 

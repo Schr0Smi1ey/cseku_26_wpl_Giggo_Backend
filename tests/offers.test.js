@@ -9,6 +9,9 @@ process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');
 const { Job } = await import('../src/models/Job.js');
+const { Conversation } = await import('../src/models/Conversation.js');
+const { Message } = await import('../src/models/Message.js');
+const { Notification } = await import('../src/models/Notification.js');
 const { Offer } = await import('../src/models/Offer.js');
 const { OfferMessage } = await import('../src/models/OfferMessage.js');
 const { OfferRevision } = await import('../src/models/OfferRevision.js');
@@ -60,7 +63,7 @@ const offerBody = {
 before(async () => connectDB());
 beforeEach(async () => {
   claims.clear();
-  await Promise.all([OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
+  await Promise.all([Notification.deleteMany({}), Message.deleteMany({}), Conversation.deleteMany({}), OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
 });
 after(async () => disconnectDB());
 
@@ -126,6 +129,27 @@ test('clients and freelancers complete the offer negotiation and acceptance work
   assert.ok(sent.body.data.offer.expiresAt);
   assert.equal(sent.body.data.offer.revisions.length, 1);
   assert.equal(sent.body.data.offer.revisions[0].number, 1);
+  const freelancer = await User.findOne({ supabaseUserId: 'offer-freelancer-flow' });
+  const legacyMessageNotification = await Notification.create({
+    recipient: freelancer._id,
+    actor: offer.client,
+    eventKey: `legacy-offer-message:${offer._id}`,
+    type: 'offer_message_received',
+    category: 'offers',
+    title: 'New offer message',
+    entityType: 'offer',
+    entityId: offer._id,
+  });
+  await request(app)
+    .post(`/api/conversations/${sent.body.data.offer.conversationId}/read`)
+    .set(auth(freelancerToken))
+    .expect(200);
+  assert.ok((await Notification.findById(legacyMessageNotification._id).lean()).readAt);
+  await request(app)
+    .post(`/api/conversations/${sent.body.data.offer.conversationId}/messages`)
+    .set(auth(freelancerToken))
+    .send({ body: 'Email me at freelancer@example.com', clientMessageId: 'offer-general-chat-0001' })
+    .expect(400);
   const visibleSentOffer = await request(app).get(`/api/proposals/${proposal._id}`).set(auth(freelancerToken)).expect(200);
   assert.equal(visibleSentOffer.body.data.proposal.offer.status, 'sent');
 
@@ -186,6 +210,11 @@ test('clients and freelancers complete the offer negotiation and acceptance work
     .post(`/api/offers/${offer._id}/messages`)
     .set(auth(freelancerToken))
     .send({ message: 'You can now reach me at freelancer@example.com.' })
+    .expect(201);
+  await request(app)
+    .post(`/api/conversations/${sent.body.data.offer.conversationId}/messages`)
+    .set(auth(freelancerToken))
+    .send({ body: 'My email remains freelancer@example.com.', clientMessageId: 'offer-general-chat-0002' })
     .expect(201);
 
   const [storedProposal, storedJob] = await Promise.all([
@@ -259,6 +288,12 @@ test('offer validation, authorization, active-offer uniqueness, and terminal act
   await request(app).post(`/api/offers/${offerId}/accept`).set(auth(freelancerToken)).send({ revision: 1 }).expect(409);
   await request(app).post(`/api/offers/${offerId}/send`).set(auth(clientToken)).expect(200);
   await request(app).post(`/api/offers/${offerId}/reject`).set(auth(freelancerToken)).expect(200);
+  const rejectedOffer = await request(app).get(`/api/offers/${offerId}`).set(auth(freelancerToken)).expect(200);
+  await request(app)
+    .post(`/api/conversations/${rejectedOffer.body.data.offer.conversationId}/messages`)
+    .set(auth(freelancerToken))
+    .send({ body: 'This negotiation is closed.', clientMessageId: 'offer-general-chat-0003' })
+    .expect(400);
   await request(app).post(`/api/offers/${offerId}/accept`).set(auth(freelancerToken)).send({ revision: 2 }).expect(400);
 
   const replacement = await request(app)
@@ -271,6 +306,8 @@ test('offer validation, authorization, active-offer uniqueness, and terminal act
   assert.equal(await Offer.countDocuments({ proposal: proposal._id }), 2);
   await request(app).delete(`/api/jobs/${job._id}`).set(auth(clientToken)).expect(200);
   assert.equal(await Offer.countDocuments({ job: job._id }), 0);
+  assert.equal(await Conversation.countDocuments({ contextType: 'offer' }), 0);
+  assert.equal(await Message.countDocuments({}), 0);
   assert.equal(await OfferRevision.countDocuments({ offer: mongoose.trusted({ $in: [offerId, replacement.body.data.offer._id] }) }), 0);
   assert.equal(await OfferMessage.countDocuments({ offer: mongoose.trusted({ $in: [offerId, replacement.body.data.offer._id] }) }), 0);
 });
@@ -310,4 +347,26 @@ test('a job accepts only one offer even when different shortlisted applicants re
   assert.equal(await Offer.countDocuments({ job: job._id, status: 'accepted' }), 1);
   assert.equal(await Proposal.countDocuments({ job: job._id, status: 'accepted' }), 1);
   assert.equal(await Job.countDocuments({ _id: job._id, status: 'filled' }), 1);
+});
+
+test('legacy negotiation messages migrate into the shared conversation once', async () => {
+  const { clientToken, freelancerToken, proposal } = await shortlistedApplication('legacy-chat');
+  const created = await request(app).post('/api/offers').set(auth(clientToken)).send({ proposal: proposal._id, ...offerBody }).expect(201);
+  const offerId = created.body.data.offer._id;
+  await request(app).post(`/api/offers/${offerId}/send`).set(auth(clientToken)).expect(200);
+  const freelancer = await User.findOne({ supabaseUserId: 'offer-freelancer-legacy-chat' });
+  const legacy = await OfferMessage.create({
+    offer: offerId,
+    sender: freelancer._id,
+    senderRole: 'freelancer',
+    kind: 'message',
+    body: 'A message from the earlier negotiation stream.',
+    revision: 1,
+  });
+
+  const first = await request(app).get(`/api/offers/${offerId}`).set(auth(freelancerToken)).expect(200);
+  const second = await request(app).get(`/api/offers/${offerId}`).set(auth(freelancerToken)).expect(200);
+  assert.equal(first.body.data.offer.messages.some((message) => message.body === legacy.body), true);
+  assert.equal(second.body.data.offer.messages.filter((message) => message.body === legacy.body).length, 1);
+  assert.equal(await Message.countDocuments({ 'metadata.legacyOfferMessageId': String(legacy._id) }), 1);
 });

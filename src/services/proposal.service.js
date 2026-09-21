@@ -4,6 +4,7 @@ import { Job } from '../models/Job.js';
 import { Offer } from '../models/Offer.js';
 import { Proposal } from '../models/Proposal.js';
 import { ApiError } from '../utils/ApiError.js';
+import { notificationService } from './notification.service.js';
 
 const ACTIVE_STATUSES = ['submitted', 'shortlisted'];
 const JOB_SELECT = 'title status category budget client experienceLevel duration createdAt';
@@ -78,6 +79,18 @@ export const proposalService = {
       proposal.decidedAt = null;
       proposal.withdrawnAt = null;
       await proposal.save();
+      await notificationService.publish({
+        recipient: job.client,
+        actor: user._id,
+        eventKey: `proposal:${proposal._id}:submitted:${proposal.updatedAt.getTime()}`,
+        type: 'proposal_submitted',
+        category: 'proposals',
+        title: `${user.name} submitted a proposal`,
+        body: `A new proposal is ready for ${job.title}.`,
+        actionUrl: `/dashboard/proposals/${proposal._id}`,
+        entityType: 'proposal',
+        entityId: proposal._id,
+      }).catch(() => null);
       return proposal;
     } catch (error) {
       if (error?.code === 11000) throw ApiError.conflict('You have already submitted a proposal for this job');
@@ -181,6 +194,18 @@ export const proposalService = {
     proposal.status = 'withdrawn';
     proposal.withdrawnAt = new Date();
     await proposal.save();
+    await notificationService.publish({
+      recipient: proposal.client,
+      actor: user._id,
+      eventKey: `proposal:${proposal._id}:withdrawn`,
+      type: 'proposal_withdrawn',
+      category: 'proposals',
+      title: `${user.name} withdrew a proposal`,
+      body: 'The proposal is no longer available for review.',
+      actionUrl: `/dashboard/proposals/${proposal._id}`,
+      entityType: 'proposal',
+      entityId: proposal._id,
+    }).catch(() => null);
     return proposal;
   },
 
@@ -203,6 +228,19 @@ export const proposalService = {
     proposal.decidedAt = decision === 'reconsider' ? null : new Date();
     if (!proposal.viewedAt) proposal.viewedAt = new Date();
     await proposal.save();
+    await notificationService.publish({
+      recipient: proposal.freelancer,
+      actor: user._id,
+      eventKey: `proposal:${proposal._id}:decision:${nextStatus}:${proposal.updatedAt.getTime()}`,
+      type: 'proposal_status_changed',
+      category: 'proposals',
+      title: `Your proposal is now ${nextStatus}`,
+      body: proposal.reviewNote || 'Open the proposal to review the latest status.',
+      actionUrl: `/dashboard/proposals/${proposal._id}`,
+      entityType: 'proposal',
+      entityId: proposal._id,
+      metadata: { status: nextStatus },
+    }).catch(() => null);
     return proposal;
   },
 };
