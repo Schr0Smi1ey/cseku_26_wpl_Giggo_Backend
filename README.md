@@ -2,7 +2,7 @@
 
 Giggo currently implements Supabase-authenticated accounts, role-specific
 profiles, CV analysis, verification, jobs, proposals, offer negotiation,
-contracts, real-time messaging, and in-app notifications.
+contracts, project workspaces, real-time messaging, and in-app notifications.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
 2. Run `npm install`.
@@ -140,6 +140,20 @@ idempotently when viewed. Only the client can pause, resume, or complete a
 contract; either participant can cancel an active or paused contract with a
 reason. Completed and cancelled contracts are terminal. Every transition
 records its actor, role, timestamp, previous status, new status, and note.
+
+## Project workspace endpoints
+
+- Participant: `GET /api/projects`, `GET /api/projects/:id`
+- Freelancer: `PATCH /api/projects/:id/progress`
+
+Each accepted contract owns exactly one project workspace. The workspace links
+participants, the contract summary, and the existing offer conversation while
+keeping accepted commercial terms in the contract as the source of truth.
+Freelancers can submit forward-only progress updates from 1% through 99% while
+the contract is active; each update requires a note and is retained in a
+bounded audit history. Paused, completed, and cancelled contracts block manual
+progress changes. Client completion records 100% automatically. All project
+list, detail, and mutation operations require contract participation.
 
 ## Messaging and notification endpoints
 

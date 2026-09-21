@@ -7,6 +7,7 @@ import { Notification } from '../models/Notification.js';
 import { SavedJob } from '../models/SavedJob.js';
 import { SavedMessage } from '../models/SavedMessage.js';
 import { Proposal } from '../models/Proposal.js';
+import { Project } from '../models/Project.js';
 import { Offer } from '../models/Offer.js';
 import { OfferMessage } from '../models/OfferMessage.js';
 import { OfferRevision } from '../models/OfferRevision.js';
@@ -84,10 +85,11 @@ export const jobService = {
   async remove(user, id) {
     const job = await owned(user, id);
     if (job.hiredProposal) throw ApiError.conflict('A filled job cannot be deleted while it has an accepted offer');
-    const [offerIds, proposalIds, contractIds] = await Promise.all([
+    const [offerIds, proposalIds, contractIds, projectIds] = await Promise.all([
       Offer.find({ job: job._id }).distinct('_id'),
       Proposal.find({ job: job._id }).distinct('_id'),
       Contract.find({ job: job._id }).distinct('_id'),
+      Project.find({ job: job._id }).distinct('_id'),
     ]);
     const conversationIds = await Conversation.find({ contextType: 'offer', contextId: mongoose.trusted({ $in: offerIds }) }).distinct('_id');
     const messageIds = await Message.find({ conversation: mongoose.trusted({ $in: conversationIds }) }).distinct('_id');
@@ -101,8 +103,10 @@ export const jobService = {
         { entityType: 'offer', entityId: mongoose.trusted({ $in: offerIds }) },
         { entityType: 'proposal', entityId: mongoose.trusted({ $in: proposalIds }) },
         { entityType: 'contract', entityId: mongoose.trusted({ $in: contractIds }) },
+        { entityType: 'project', entityId: mongoose.trusted({ $in: projectIds }) },
       ] }),
       Contract.deleteMany({ job: job._id }),
+      Project.deleteMany({ job: job._id }),
       Proposal.deleteMany({ job: job._id }),
       OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: offerIds }) }),
       OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: offerIds }) }),

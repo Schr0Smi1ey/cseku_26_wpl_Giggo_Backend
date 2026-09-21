@@ -17,6 +17,7 @@ const { Offer } = await import('../src/models/Offer.js');
 const { OfferMessage } = await import('../src/models/OfferMessage.js');
 const { OfferRevision } = await import('../src/models/OfferRevision.js');
 const { Proposal } = await import('../src/models/Proposal.js');
+const { Project } = await import('../src/models/Project.js');
 const { User } = await import('../src/models/User.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 
@@ -64,7 +65,7 @@ const offerBody = {
 before(async () => connectDB());
 beforeEach(async () => {
   claims.clear();
-  await Promise.all([Contract.deleteMany({}), Notification.deleteMany({}), Message.deleteMany({}), Conversation.deleteMany({}), OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
+  await Promise.all([Contract.deleteMany({}), Project.deleteMany({}), Notification.deleteMany({}), Message.deleteMany({}), Conversation.deleteMany({}), OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
 });
 after(async () => disconnectDB());
 
@@ -347,6 +348,7 @@ test('a job accepts only one offer even when different shortlisted applicants re
   assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409]);
   assert.equal(await Offer.countDocuments({ job: job._id, status: 'accepted' }), 1);
   assert.equal(await Contract.countDocuments({ job: job._id }), 1);
+  assert.equal(await Project.countDocuments({ job: job._id }), 1);
   assert.equal(await Proposal.countDocuments({ job: job._id, status: 'accepted' }), 1);
   assert.equal(await Job.countDocuments({ _id: job._id, status: 'filled' }), 1);
 });
