@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { AIAnalysis } from '../models/AIAnalysis.js';
 import { AIUsage } from '../models/AIUsage.js';
 import { ClientProfile } from '../models/ClientProfile.js';
+import { Contract } from '../models/Contract.js';
 import { Conversation } from '../models/Conversation.js';
 import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
@@ -70,14 +71,16 @@ export const accountDeletionService = {
       throw error;
     }
 
-    const [freelancerProfile, verificationRequests, ownedJobs, relatedOffers] = await Promise.all([
+    const [freelancerProfile, verificationRequests, ownedJobs, relatedOffers, relatedContracts] = await Promise.all([
       FreelancerProfile.findOne({ user: account._id }),
       VerificationRequest.find({ user: account._id }).select('+documents.path'),
       Job.find({ client: account._id }).select('_id'),
       Offer.find({ $or: [{ freelancer: account._id }, { client: account._id }] }).select('_id'),
+      Contract.find({ $or: [{ freelancer: account._id }, { client: account._id }] }).select('_id'),
     ]);
     const ownedJobIds = ownedJobs.map((job) => job._id);
     const relatedOfferIds = relatedOffers.map((offer) => offer._id);
+    const relatedContractIds = relatedContracts.map((contract) => contract._id);
     const relatedConversations = await Conversation.find({ participantIds: account._id }).select('_id type');
     const removedConversationIds = relatedConversations.filter((conversation) => conversation.type !== 'group').map((conversation) => conversation._id);
     const retainedGroupIds = relatedConversations.filter((conversation) => conversation.type === 'group').map((conversation) => conversation._id);
@@ -99,12 +102,14 @@ export const accountDeletionService = {
         { recipient: account._id },
         { entityType: 'conversation', entityId: mongoose.trusted({ $in: removedConversationIds }) },
         { entityType: 'offer', entityId: mongoose.trusted({ $in: relatedOfferIds }) },
+        { entityType: 'contract', entityId: mongoose.trusted({ $in: relatedContractIds }) },
       ] }),
       VerificationRequest.deleteMany({ user: account._id }),
       Job.deleteMany({ client: account._id }),
       OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
+      Contract.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Proposal.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Message.deleteMany({ conversation: mongoose.trusted({ $in: removedConversationIds }) }),
       Conversation.deleteMany({ _id: mongoose.trusted({ $in: removedConversationIds }) }),

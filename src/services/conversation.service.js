@@ -87,6 +87,7 @@ export const conversationService = {
   },
 
   async create(user, { participantIds, title = '' }) {
+    await Conversation.init();
     const uniqueIds = [...new Set([valueId(user._id), ...participantIds])];
     if (uniqueIds.length < 2) throw ApiError.badRequest('Choose at least one other participant');
     if (uniqueIds.length > 20) throw ApiError.badRequest('A conversation can have at most 20 participants');

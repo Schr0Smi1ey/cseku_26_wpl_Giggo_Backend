@@ -9,6 +9,7 @@ import { OfferRevision } from '../models/OfferRevision.js';
 import { Proposal } from '../models/Proposal.js';
 import { ApiError } from '../utils/ApiError.js';
 import { containsExternalContact } from '../utils/contact-policy.js';
+import { contractService } from './contract.service.js';
 import { notificationService } from './notification.service.js';
 import { conversationService } from './conversation.service.js';
 import { emitToConversation } from './realtime.service.js';
@@ -255,6 +256,9 @@ function visibleOffer(user, offer, revisionMap) {
 }
 
 async function offerViews(user, offers) {
+  await Promise.all(offers
+    .filter((offer) => offer.status === 'accepted' && offer.acceptedRevision && !offer.contract)
+    .map((offer) => contractService.ensureForAcceptedOffer(offer)));
   const revisionMap = await revisionMapFor(offers);
   return offers.map((offer) => visibleOffer(user, offer, revisionMap));
 }
@@ -483,6 +487,7 @@ export const offerService = {
     }
     if (existing.status === 'accepted') {
       if (id(existing.acceptedRevision) !== id(published)) throw ApiError.conflict('A different offer revision was accepted');
+      await contractService.ensureForAcceptedOffer(existing, user);
       return populatedOffer(user, existing._id, true);
     }
     if (existing.status !== 'sent' || (existing.expiresAt && existing.expiresAt <= new Date())) {
@@ -530,6 +535,13 @@ export const offerService = {
     if (proposalResult.modifiedCount !== 1) {
       await rollbackAcceptedOffer(accepted, proposal, job);
       throw ApiError.conflict('The proposal changed before the offer could be accepted');
+    }
+
+    try {
+      await contractService.ensureForAcceptedOffer(accepted, user);
+    } catch (error) {
+      await rollbackAcceptedOffer(accepted, proposal, job);
+      throw error;
     }
 
     await Promise.allSettled([

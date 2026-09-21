@@ -2,7 +2,7 @@
 
 Giggo currently implements Supabase-authenticated accounts, role-specific
 profiles, CV analysis, verification, jobs, proposals, offer negotiation,
-real-time messaging, and in-app notifications.
+contracts, real-time messaging, and in-app notifications.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
 2. Run `npm install`.
@@ -122,13 +122,24 @@ change requests form a chronological negotiation record. Obvious off-platform
 contact details are rejected until the offer has been accepted. The database
 permits only one active offer per proposal. Accepting an unexpired offer uses
 conditional updates so only one proposal can fill a job, then records the
-accepted revision and closes the job to further hiring. Contract and project
-records are intentionally deferred to the next delivery slice.
+accepted revision, creates one contract, and closes the job to further hiring.
 
 For installations that already contain sent offers from the earlier mutable
 schema, run `npm run migrate:offer-history` once. It preserves each offer's
 currently stored terms as its first available immutable snapshot; terms that
 were overwritten before this migration cannot be reconstructed.
+
+## Contract lifecycle endpoints
+
+- Participant: `GET /api/contracts`, `GET /api/contracts/:id`
+- Participant: `POST /api/contracts/:id/status`
+
+Accepting an offer creates exactly one fixed-price or hourly contract from the
+immutable accepted revision. Older accepted offers are backfilled
+idempotently when viewed. Only the client can pause, resume, or complete a
+contract; either participant can cancel an active or paused contract with a
+reason. Completed and cancelled contracts are terminal. Every transition
+records its actor, role, timestamp, previous status, new status, and note.
 
 ## Messaging and notification endpoints
 

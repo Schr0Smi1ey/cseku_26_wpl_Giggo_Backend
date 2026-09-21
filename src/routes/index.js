@@ -8,6 +8,7 @@ import proposalRoutes from './proposal.routes.js';
 import offerRoutes from './offer.routes.js';
 import conversationRoutes from './conversation.routes.js';
 import notificationRoutes from './notification.routes.js';
+import contractRoutes from './contract.routes.js';
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use('/proposals', proposalRoutes);
 router.use('/offers', offerRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/contracts', contractRoutes);
 
 export default router;
