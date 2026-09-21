@@ -44,6 +44,7 @@ const historySchema = new Schema(
 const contractSchema = new Schema(
   {
     offer: { type: Schema.Types.ObjectId, ref: 'Offer', required: true, unique: true, index: true },
+    project: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
     acceptedRevision: { type: Schema.Types.ObjectId, ref: 'OfferRevision', required: true },
     proposal: { type: Schema.Types.ObjectId, ref: 'Proposal', required: true },
     job: { type: Schema.Types.ObjectId, ref: 'Job', required: true, unique: true, index: true },

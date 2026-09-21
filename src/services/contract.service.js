@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 import { Contract, CONTRACT_STATUSES } from '../models/Contract.js';
 import { Offer } from '../models/Offer.js';
 import { OfferRevision } from '../models/OfferRevision.js';
+import { Project } from '../models/Project.js';
 import { ApiError } from '../utils/ApiError.js';
 import { notificationService } from './notification.service.js';
+import { projectService } from './project.service.js';
 
 const USER_SELECT = 'name avatar role status';
 const JOB_SELECT = 'title status';
@@ -58,6 +60,7 @@ export const contractService = {
     const existing = await Contract.findOne({ offer: offer._id });
     if (existing) {
       if (id(offer.contract) !== id(existing)) await Offer.updateOne({ _id: offer._id }, { $set: { contract: existing._id } });
+      await projectService.ensureForContract(existing, actor);
       return existing;
     }
 
@@ -107,6 +110,17 @@ export const contractService = {
         throw ApiError.conflict('A different contract already exists for this job');
       }
     }
+    try {
+      await projectService.ensureForContract(contract, actor);
+    } catch (error) {
+      if (created) {
+        await Promise.allSettled([
+          Project.deleteMany({ contract: contract._id }),
+          Contract.deleteOne({ _id: contract._id }),
+        ]);
+      }
+      throw error;
+    }
     await Offer.updateOne({ _id: offer._id }, { $set: { contract: contract._id } });
     offer.contract = contract._id;
 
@@ -142,6 +156,7 @@ export const contractService = {
       contractQuery(Contract.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)),
       Contract.countDocuments(filter),
     ]);
+    await Promise.all(items.map((contract) => projectService.ensureForContract(contract)));
     return { items, pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } };
   },
 
@@ -149,6 +164,7 @@ export const contractService = {
     const contract = await contractQuery(Contract.findById(contractId), { includeHistory: true });
     if (!contract) throw ApiError.notFound('Contract not found');
     ensureParticipant(contract, user);
+    await projectService.ensureForContract(contract);
     return contract;
   },
 
@@ -182,6 +198,15 @@ export const contractService = {
       { new: true, runValidators: true },
     );
     if (!updated) throw ApiError.conflict('The contract changed before your action was saved');
+
+    await projectService.reflectContractTransition(updated, user, note).catch((error) => {
+      console.error('Project synchronization failed after contract transition', {
+        contractId: String(updated._id),
+        status: updated.status,
+        errorName: error?.name,
+        errorCode: error?.code,
+      });
+    });
 
     const recipient = isClient ? contract.freelancer : contract.client;
     await publishContractNotification({

@@ -15,6 +15,7 @@ const { Notification } = await import('../src/models/Notification.js');
 const { Offer } = await import('../src/models/Offer.js');
 const { OfferRevision } = await import('../src/models/OfferRevision.js');
 const { Proposal } = await import('../src/models/Proposal.js');
+const { Project } = await import('../src/models/Project.js');
 const { User } = await import('../src/models/User.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 
@@ -70,6 +71,7 @@ beforeEach(async () => {
     OfferRevision.deleteMany({}),
     Offer.deleteMany({}),
     Proposal.deleteMany({}),
+    Project.deleteMany({}),
     Job.deleteMany({}),
     User.deleteMany({}),
   ]);
