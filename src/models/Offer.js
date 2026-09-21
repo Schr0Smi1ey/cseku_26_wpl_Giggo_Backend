@@ -50,6 +50,7 @@ const offerSchema = new Schema(
     revision: { type: Number, min: 1, default: 1 },
     currentRevision: { type: Schema.Types.ObjectId, ref: 'OfferRevision', default: null },
     acceptedRevision: { type: Schema.Types.ObjectId, ref: 'OfferRevision', default: null },
+    contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null },
     changeRequest: { type: String, trim: true, maxlength: 1000, default: '' },
     sentAt: { type: Date, default: null },
     revisedAt: { type: Date, default: null },
