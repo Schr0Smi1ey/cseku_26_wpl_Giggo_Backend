@@ -3,6 +3,7 @@ import { Contract } from '../models/Contract.js';
 import { Conversation } from '../models/Conversation.js';
 import { Job } from '../models/Job.js';
 import { Message } from '../models/Message.js';
+import { Milestone } from '../models/Milestone.js';
 import { Notification } from '../models/Notification.js';
 import { SavedJob } from '../models/SavedJob.js';
 import { SavedMessage } from '../models/SavedMessage.js';
@@ -11,6 +12,7 @@ import { Project } from '../models/Project.js';
 import { Offer } from '../models/Offer.js';
 import { OfferMessage } from '../models/OfferMessage.js';
 import { OfferRevision } from '../models/OfferRevision.js';
+import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const clientSelect = 'name avatar role status';
@@ -105,6 +107,8 @@ export const jobService = {
         { entityType: 'contract', entityId: mongoose.trusted({ $in: contractIds }) },
         { entityType: 'project', entityId: mongoose.trusted({ $in: projectIds }) },
       ] }),
+      WorkSubmission.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
+      Milestone.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
       Contract.deleteMany({ job: job._id }),
       Project.deleteMany({ job: job._id }),
       Proposal.deleteMany({ job: job._id }),

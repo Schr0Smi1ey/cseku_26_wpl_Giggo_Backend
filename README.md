@@ -2,7 +2,8 @@
 
 Giggo currently implements Supabase-authenticated accounts, role-specific
 profiles, CV analysis, verification, jobs, proposals, offer negotiation,
-contracts, project workspaces, real-time messaging, and in-app notifications.
+contracts, project workspaces, milestone submissions and reviews, real-time
+messaging, and in-app notifications.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
 2. Run `npm install`.
@@ -145,6 +146,9 @@ records its actor, role, timestamp, previous status, new status, and note.
 
 - Participant: `GET /api/projects`, `GET /api/projects/:id`
 - Freelancer: `PATCH /api/projects/:id/progress`
+- Freelancer: `POST /api/projects/:id/milestones/:milestoneId/start`
+- Freelancer: `POST /api/projects/:id/milestones/:milestoneId/submissions`
+- Client: `POST /api/projects/:id/milestones/:milestoneId/submissions/:submissionId/review`
 
 Each accepted contract owns exactly one project workspace. The workspace links
 participants, the contract summary, and the existing offer conversation while
@@ -152,8 +156,15 @@ keeping accepted commercial terms in the contract as the source of truth.
 Freelancers can submit forward-only progress updates from 1% through 99% while
 the contract is active; each update requires a note and is retained in a
 bounded audit history. Paused, completed, and cancelled contracts block manual
-progress changes. Client completion records 100% automatically. All project
-list, detail, and mutation operations require contract participation.
+progress changes. Accepted fixed-price terms create ordered milestones (or one
+default delivery milestone when the accepted terms have none). Freelancers can
+start milestones and submit versioned descriptions and delivery links; clients
+can approve the latest submission or request a revision with required feedback.
+Submission history is retained, stale/repeated transitions are rejected, and
+contract completion requires every fixed-price milestone to be approved.
+Client completion records 100% automatically. All project list, detail, and
+mutation operations require contract participation. Hourly work remains outside
+this workflow and will use the dedicated time-tracking feature.
 
 ## Messaging and notification endpoints
 
