@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 import { Contract, CONTRACT_STATUSES } from '../models/Contract.js';
+import { Milestone, MILESTONE_STATUSES } from '../models/Milestone.js';
 import { Offer } from '../models/Offer.js';
 import { OfferRevision } from '../models/OfferRevision.js';
 import { Project } from '../models/Project.js';
+import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 import { notificationService } from './notification.service.js';
 import { projectService } from './project.service.js';
@@ -115,6 +117,8 @@ export const contractService = {
     } catch (error) {
       if (created) {
         await Promise.allSettled([
+          WorkSubmission.deleteMany({ contract: contract._id }),
+          Milestone.deleteMany({ contract: contract._id }),
           Project.deleteMany({ contract: contract._id }),
           Contract.deleteOne({ _id: contract._id }),
         ]);
@@ -180,6 +184,16 @@ export const contractService = {
     }
     if (status === CONTRACT_STATUSES.CANCELLED && note.trim().length < 3) {
       throw ApiError.badRequest('Add a reason before cancelling the contract');
+    }
+    if (status === CONTRACT_STATUSES.COMPLETED) {
+      await projectService.ensureForContract(contract, user);
+      const unfinishedMilestones = await Milestone.countDocuments({
+        contract: contract._id,
+        status: mongoose.trusted({ $ne: MILESTONE_STATUSES.APPROVED }),
+      });
+      if (unfinishedMilestones > 0) {
+        throw ApiError.badRequest('Approve every milestone before completing the contract');
+      }
     }
 
     const now = new Date();
