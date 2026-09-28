@@ -12,6 +12,7 @@ const { Job } = await import('../src/models/Job.js');
 const { Contract } = await import('../src/models/Contract.js');
 const { Conversation } = await import('../src/models/Conversation.js');
 const { Message } = await import('../src/models/Message.js');
+const { Milestone } = await import('../src/models/Milestone.js');
 const { Notification } = await import('../src/models/Notification.js');
 const { Offer } = await import('../src/models/Offer.js');
 const { OfferMessage } = await import('../src/models/OfferMessage.js');
@@ -19,6 +20,7 @@ const { OfferRevision } = await import('../src/models/OfferRevision.js');
 const { Proposal } = await import('../src/models/Proposal.js');
 const { Project } = await import('../src/models/Project.js');
 const { User } = await import('../src/models/User.js');
+const { WorkSubmission } = await import('../src/models/WorkSubmission.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 
 const claims = new Map();
@@ -65,7 +67,7 @@ const offerBody = {
 before(async () => connectDB());
 beforeEach(async () => {
   claims.clear();
-  await Promise.all([Contract.deleteMany({}), Project.deleteMany({}), Notification.deleteMany({}), Message.deleteMany({}), Conversation.deleteMany({}), OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
+  await Promise.all([WorkSubmission.deleteMany({}), Milestone.deleteMany({}), Contract.deleteMany({}), Project.deleteMany({}), Notification.deleteMany({}), Message.deleteMany({}), Conversation.deleteMany({}), OfferMessage.deleteMany({}), OfferRevision.deleteMany({}), Offer.deleteMany({}), Proposal.deleteMany({}), Job.deleteMany({}), User.deleteMany({})]);
 });
 after(async () => disconnectDB());
 

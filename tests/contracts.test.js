@@ -11,12 +11,14 @@ const { Contract } = await import('../src/models/Contract.js');
 const { Conversation } = await import('../src/models/Conversation.js');
 const { Job } = await import('../src/models/Job.js');
 const { Message } = await import('../src/models/Message.js');
+const { Milestone } = await import('../src/models/Milestone.js');
 const { Notification } = await import('../src/models/Notification.js');
 const { Offer } = await import('../src/models/Offer.js');
 const { OfferRevision } = await import('../src/models/OfferRevision.js');
 const { Proposal } = await import('../src/models/Proposal.js');
 const { Project } = await import('../src/models/Project.js');
 const { User } = await import('../src/models/User.js');
+const { WorkSubmission } = await import('../src/models/WorkSubmission.js');
 const { setSupabaseTokenVerifierForTests } = await import('../src/services/supabase-auth.service.js');
 
 const claims = new Map();
@@ -64,6 +66,8 @@ before(async () => connectDB());
 beforeEach(async () => {
   claims.clear();
   await Promise.all([
+    WorkSubmission.deleteMany({}),
+    Milestone.deleteMany({}),
     Contract.deleteMany({}),
     Message.deleteMany({}),
     Conversation.deleteMany({}),
@@ -130,7 +134,11 @@ test('hourly accepted offers create hourly contracts without fixed milestones', 
 });
 
 test('contract transitions enforce role rules, valid state changes, cancellation reasons, and audit history', async () => {
-  const first = await acceptedContract('transitions');
+  const first = await acceptedContract('transitions', {
+    job: { ...jobBody, budget: { type: 'hourly', min: 30, max: 60, currency: 'USD' } },
+    proposal: { ...proposalBody, bid: { amount: 45, type: 'hourly', currency: 'USD' }, milestones: [] },
+    offer: { ...offerBody, budget: { amount: 45, type: 'hourly', currency: 'USD' }, milestones: [] },
+  });
   const contractId = first.accepted.contract;
   await request(app).post(`/api/contracts/${contractId}/status`).set(auth(first.freelancerToken)).send({ status: 'paused' }).expect(403);
   await request(app).post(`/api/contracts/${contractId}/status`).set(auth(first.clientToken)).send({ status: 'paused', note: 'Waiting for a required client asset.' }).expect(200);

@@ -8,6 +8,7 @@ import { DeletedIdentity } from '../models/DeletedIdentity.js';
 import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { Job } from '../models/Job.js';
 import { Message } from '../models/Message.js';
+import { Milestone } from '../models/Milestone.js';
 import { Notification } from '../models/Notification.js';
 import { NotificationPreference } from '../models/NotificationPreference.js';
 import { Offer } from '../models/Offer.js';
@@ -20,6 +21,7 @@ import { SavedJob } from '../models/SavedJob.js';
 import { SavedMessage } from '../models/SavedMessage.js';
 import { ROLES, User } from '../models/User.js';
 import { VerificationRequest } from '../models/VerificationRequest.js';
+import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 import { removeAvatarAsset } from './avatar.storage.service.js';
 import { removeCvFile } from './profile.service.js';
@@ -113,6 +115,8 @@ export const accountDeletionService = {
       OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
+      WorkSubmission.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
+      Milestone.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       Contract.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Project.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       Proposal.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
