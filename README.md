@@ -2,7 +2,8 @@
 
 Giggo currently implements Supabase-authenticated accounts, role-specific
 profiles, CV analysis, verification, jobs, proposals, offer negotiation,
-contracts, project workspaces, milestone submissions and reviews, real-time
+contracts, project workspaces, milestone submissions and reviews, hourly work
+diaries, real-time
 messaging, and in-app notifications.
 
 1. Copy `.env.example` to `.env` and replace the JWT placeholder values.
@@ -163,8 +164,28 @@ can approve the latest submission or request a revision with required feedback.
 Submission history is retained, stale/repeated transitions are rejected, and
 contract completion requires every fixed-price milestone to be approved.
 Client completion records 100% automatically. All project list, detail, and
-mutation operations require contract participation. Hourly work remains outside
-this workflow and will use the dedicated time-tracking feature.
+mutation operations require contract participation.
+
+## Hourly work-diary endpoints
+
+- Participant: `GET /api/projects/:id/time`
+- Freelancer: `POST /api/projects/:id/time/timers`
+- Freelancer: `POST /api/projects/:id/time/timers/:timerId/heartbeat`
+- Freelancer: `POST /api/projects/:id/time/timers/:timerId/stop`
+- Freelancer: `POST /api/projects/:id/time/entries`
+- Freelancer: `PATCH /api/projects/:id/time/entries/:entryId`
+- Freelancer: `DELETE /api/projects/:id/time/entries/:entryId`
+
+Hourly contracts use a participant-only work diary instead of delivery
+milestones. A freelancer can run only one timer at a time across Giggo;
+heartbeats bound stale sessions, and stopping is idempotent. Manual time is
+limited to the previous 30 days, cannot overlap recorded/running work, and each
+session is capped at 12 hours. Entries snapshot the accepted hourly rate,
+currency, duration, and estimated value. Changes and soft deletions are allowed
+for seven days with a required reason, optimistic revision checks, and retained
+audit history. Paused or terminal contracts block new time, while a timer that
+was already running can still be safely stopped at the contract-transition
+boundary. These estimates are not invoices or payment records.
 
 ## Messaging and notification endpoints
 

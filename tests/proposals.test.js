@@ -3,6 +3,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
+process.env.VIRTUAL_CARD_ENABLED = 'false';
 
 const { createApp } = await import('../src/app.js');
 const { connectDB, disconnectDB } = await import('../src/config/db.js');

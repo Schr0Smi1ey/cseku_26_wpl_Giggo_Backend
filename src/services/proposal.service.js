@@ -5,6 +5,7 @@ import { Offer } from '../models/Offer.js';
 import { Proposal } from '../models/Proposal.js';
 import { ApiError } from '../utils/ApiError.js';
 import { notificationService } from './notification.service.js';
+import { developerEligibility } from './virtualCard.service.js';
 
 const ACTIVE_STATUSES = ['submitted', 'shortlisted'];
 const JOB_SELECT = 'title status category budget client experienceLevel duration createdAt';
@@ -64,6 +65,11 @@ export const proposalService = {
     if (!job) throw ApiError.notFound('Job not found');
     if (String(job.client) === String(user._id)) throw ApiError.badRequest('You cannot submit a proposal to your own job');
     if (job.status !== 'open') throw ApiError.badRequest('This job is not accepting proposals');
+
+    const eligibility = await developerEligibility(user);
+    if (!eligibility.canApplyForJobs) {
+      throw new ApiError(403, 'Activate your virtual card before applying for jobs.', eligibility.reason || 'CARD_ACTIVATION_REQUIRED', { amountRequired: eligibility.amountRequired || 0 });
+    }
 
     const existing = await Proposal.findOne({ job: job._id, freelancer: user._id });
     if (existing && existing.status !== 'withdrawn') {

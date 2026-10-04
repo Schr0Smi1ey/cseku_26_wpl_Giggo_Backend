@@ -38,6 +38,17 @@ export const config = {
     provider: process.env.AI_PROVIDER || 'heuristic',
     retention: numberFromEnv('AI_ANALYSIS_RETENTION', 50),
   },
+  payment: {
+    provider: 'mock',
+    currency: (process.env.PAYMENT_CURRENCY || 'BDT').toUpperCase(),
+    feePercentage: Number(process.env.PLATFORM_FEE_PERCENTAGE || 10),
+    fixedFee: Number(process.env.PLATFORM_FIXED_FEE || 0),
+  },
+  virtualCard: {
+    enabled: (process.env.VIRTUAL_CARD_ENABLED || 'true').toLowerCase() !== 'false',
+    activationMinimum: Number(process.env.VIRTUAL_CARD_ACTIVATION_MINIMUM || 500),
+    currency: (process.env.VIRTUAL_CARD_CURRENCY || 'BDT').toUpperCase(),
+  },
   supabase: {
     url: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',

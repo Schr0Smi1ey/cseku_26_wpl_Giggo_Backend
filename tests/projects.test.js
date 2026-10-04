@@ -3,6 +3,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
+process.env.VIRTUAL_CARD_ENABLED = 'false';
 process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 
 const { createApp } = await import('../src/app.js');
@@ -82,6 +83,9 @@ beforeEach(async () => {
 });
 after(async () => disconnectDB());
 
+// Escrow funding is covered in payments.test.js; here the milestone is marked funded directly.
+const markFunded = (milestoneId) => Milestone.updateOne({ _id: milestoneId }, { $set: { status: 'funded', paymentState: 'funded' } });
+
 async function acceptedProject(suffix, values = {}) {
   const clientToken = tokenFor(`project-client-${suffix}`, 'client');
   const freelancerToken = tokenFor(`project-freelancer-${suffix}`, 'freelancer');
@@ -154,6 +158,9 @@ test('milestone submissions preserve revision history and enforce participant ro
 
   await request(app).post(`${base}/start`).set(auth(fixture.clientToken)).expect(403);
   await request(app).post(`${base}/start`).set(auth(fixture.outsiderToken)).expect(404);
+  const unfunded = await request(app).post(`${base}/start`).set(auth(fixture.freelancerToken)).expect(400);
+  assert.match(unfunded.body.message, /fund/i);
+  await markFunded(milestone._id);
   const started = await request(app).post(`${base}/start`).set(auth(fixture.freelancerToken)).expect(200);
   assert.equal(started.body.data.project.milestones[0].status, 'in_progress');
   await request(app).post(`${base}/start`).set(auth(fixture.freelancerToken)).expect(400);
@@ -214,6 +221,7 @@ test('paused work blocks progress and client completion records 100 percent', as
   await request(app).post(`/api/contracts/${fixture.contract._id}/status`).set(auth(fixture.clientToken)).send({ status: 'completed', note: 'Attempted before milestone approval.' }).expect(400);
   const milestone = await Milestone.findOne({ project: fixture.project._id }).lean();
   const base = `/api/projects/${fixture.project._id}/milestones/${milestone._id}`;
+  await markFunded(milestone._id);
   await request(app).post(`${base}/start`).set(auth(fixture.freelancerToken)).expect(200);
   const submitted = await request(app).post(`${base}/submissions`).set(auth(fixture.freelancerToken)).send({ description: 'Final milestone delivery is ready.', links: [] }).expect(200);
   const submissionId = submitted.body.data.project.milestones[0].submissions[0]._id;

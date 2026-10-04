@@ -4,10 +4,13 @@ const { Schema } = mongoose;
 
 export const MILESTONE_STATUSES = Object.freeze({
   PENDING: 'pending',
+  FUNDING_PENDING: 'funding_pending',
+  FUNDED: 'funded',
   IN_PROGRESS: 'in_progress',
   SUBMITTED: 'submitted',
   REVISION_REQUESTED: 'revision_requested',
   APPROVED: 'approved',
+  PAID: 'paid',
 });
 
 const milestoneSchema = new Schema(
@@ -26,6 +29,7 @@ const milestoneSchema = new Schema(
       default: MILESTONE_STATUSES.PENDING,
       index: true,
     },
+    paymentState: { type: String, enum: ['not_ready', 'funding_pending', 'funded', 'payment_pending', 'paid'], default: 'not_ready' },
     startedAt: { type: Date, default: null },
     submittedAt: { type: Date, default: null },
     approvedAt: { type: Date, default: null },

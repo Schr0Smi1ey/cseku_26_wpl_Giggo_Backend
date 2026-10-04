@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { config } from './index.js';
 
 let memoryServer = null;
@@ -17,7 +17,8 @@ export async function connectDB() {
 
   if (config.isProduction) throw new Error('MONGODB_URI is required in production.');
 
-  memoryServer = await MongoMemoryServer.create();
+  // A replica set is required for the multi-document transactions used by escrow payments.
+  memoryServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(memoryServer.getUri(), { serverSelectionTimeoutMS: 10000 });
   return mongoose.connection;
 }

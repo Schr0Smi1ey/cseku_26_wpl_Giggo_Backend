@@ -3,14 +3,17 @@ import { createApp } from './app.js';
 import { connectDB, disconnectDB } from './config/db.js';
 import { config } from './config/index.js';
 import { createRealtimeServer } from './sockets/index.js';
+import { startPaymentWorker } from './services/payment.service.js';
 
 async function start() {
   await connectDB();
   const server = http.createServer(createApp());
   const io = createRealtimeServer(server);
+  const stopPaymentWorker = startPaymentWorker();
   server.listen(config.port, () => console.log(`Giggo API listening on http://localhost:${config.port}`));
 
   const shutdown = async () => {
+    stopPaymentWorker();
     await new Promise((resolve) => io.close(resolve));
     if (server.listening) await new Promise((resolve) => server.close(resolve));
     await disconnectDB();

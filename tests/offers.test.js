@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 
 process.env.NODE_ENV = 'test';
+process.env.VIRTUAL_CARD_ENABLED = 'false';
 process.env.SUPABASE_URL = 'https://giggo-test.supabase.co';
 
 const { createApp } = await import('../src/app.js');

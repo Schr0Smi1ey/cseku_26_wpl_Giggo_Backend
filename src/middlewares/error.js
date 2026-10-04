@@ -31,5 +31,5 @@ export function errorHandler(error, _req, res, _next) {
   }
   const code = error instanceof ApiError ? error.code : 'INTERNAL_ERROR';
   const message = error instanceof ApiError ? error.message : 'An unexpected server error occurred';
-  return res.status(status).json({ success: false, message, error: { code } });
+  return res.status(status).json({ success: false, message, error: { code, ...(error instanceof ApiError && error.details ? { details: error.details } : {}) } });
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { ActiveTimer } from '../models/ActiveTimer.js';
 import { AIAnalysis } from '../models/AIAnalysis.js';
 import { AIUsage } from '../models/AIUsage.js';
 import { ClientProfile } from '../models/ClientProfile.js';
@@ -21,6 +22,7 @@ import { SavedJob } from '../models/SavedJob.js';
 import { SavedMessage } from '../models/SavedMessage.js';
 import { ROLES, User } from '../models/User.js';
 import { VerificationRequest } from '../models/VerificationRequest.js';
+import { TimeEntry } from '../models/TimeEntry.js';
 import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 import { removeAvatarAsset } from './avatar.storage.service.js';
@@ -86,6 +88,7 @@ export const accountDeletionService = {
     const relatedOfferIds = relatedOffers.map((offer) => offer._id);
     const relatedContractIds = relatedContracts.map((contract) => contract._id);
     const relatedProjectIds = relatedProjects.map((project) => project._id);
+    const relatedTimeEntryIds = await TimeEntry.find({ project: mongoose.trusted({ $in: relatedProjectIds }) }).distinct('_id');
     const relatedConversations = await Conversation.find({ participantIds: account._id }).select('_id type');
     const removedConversationIds = relatedConversations.filter((conversation) => conversation.type !== 'group').map((conversation) => conversation._id);
     const retainedGroupIds = relatedConversations.filter((conversation) => conversation.type === 'group').map((conversation) => conversation._id);
@@ -109,12 +112,15 @@ export const accountDeletionService = {
         { entityType: 'offer', entityId: mongoose.trusted({ $in: relatedOfferIds }) },
         { entityType: 'contract', entityId: mongoose.trusted({ $in: relatedContractIds }) },
         { entityType: 'project', entityId: mongoose.trusted({ $in: relatedProjectIds }) },
+        { entityType: 'time_entry', entityId: mongoose.trusted({ $in: relatedTimeEntryIds }) },
       ] }),
       VerificationRequest.deleteMany({ user: account._id }),
       Job.deleteMany({ client: account._id }),
       OfferMessage.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       OfferRevision.deleteMany({ offer: mongoose.trusted({ $in: relatedOfferIds }) }),
       Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
+      ActiveTimer.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
+      TimeEntry.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       WorkSubmission.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       Milestone.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       Contract.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),

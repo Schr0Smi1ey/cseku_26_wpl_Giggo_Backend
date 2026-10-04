@@ -189,7 +189,7 @@ export const contractService = {
       await projectService.ensureForContract(contract, user);
       const unfinishedMilestones = await Milestone.countDocuments({
         contract: contract._id,
-        status: mongoose.trusted({ $ne: MILESTONE_STATUSES.APPROVED }),
+        status: mongoose.trusted({ $nin: [MILESTONE_STATUSES.APPROVED, MILESTONE_STATUSES.PAID] }),
       });
       if (unfinishedMilestones > 0) {
         throw ApiError.badRequest('Approve every milestone before completing the contract');

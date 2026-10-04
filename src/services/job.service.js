@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { ActiveTimer } from '../models/ActiveTimer.js';
 import { Contract } from '../models/Contract.js';
 import { Conversation } from '../models/Conversation.js';
 import { Job } from '../models/Job.js';
@@ -12,6 +13,7 @@ import { Project } from '../models/Project.js';
 import { Offer } from '../models/Offer.js';
 import { OfferMessage } from '../models/OfferMessage.js';
 import { OfferRevision } from '../models/OfferRevision.js';
+import { TimeEntry } from '../models/TimeEntry.js';
 import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -95,6 +97,7 @@ export const jobService = {
     ]);
     const conversationIds = await Conversation.find({ contextType: 'offer', contextId: mongoose.trusted({ $in: offerIds }) }).distinct('_id');
     const messageIds = await Message.find({ conversation: mongoose.trusted({ $in: conversationIds }) }).distinct('_id');
+    const timeEntryIds = await TimeEntry.find({ project: mongoose.trusted({ $in: projectIds }) }).distinct('_id');
     await Promise.all([
       job.deleteOne(),
       SavedJob.deleteMany({ job: job._id }),
@@ -106,7 +109,10 @@ export const jobService = {
         { entityType: 'proposal', entityId: mongoose.trusted({ $in: proposalIds }) },
         { entityType: 'contract', entityId: mongoose.trusted({ $in: contractIds }) },
         { entityType: 'project', entityId: mongoose.trusted({ $in: projectIds }) },
+        { entityType: 'time_entry', entityId: mongoose.trusted({ $in: timeEntryIds }) },
       ] }),
+      ActiveTimer.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
+      TimeEntry.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
       WorkSubmission.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
       Milestone.deleteMany({ project: mongoose.trusted({ $in: projectIds }) }),
       Contract.deleteMany({ job: job._id }),

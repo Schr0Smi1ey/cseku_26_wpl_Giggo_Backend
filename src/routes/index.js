@@ -10,6 +10,8 @@ import conversationRoutes from './conversation.routes.js';
 import notificationRoutes from './notification.routes.js';
 import contractRoutes from './contract.routes.js';
 import projectRoutes from './project.routes.js';
+import paymentRoutes from './payment.routes.js';
+import virtualCardRoutes from './virtualCard.routes.js';
 
 const router = Router();
 
@@ -25,5 +27,7 @@ router.use('/conversations', conversationRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/contracts', contractRoutes);
 router.use('/projects', projectRoutes);
+router.use('/', paymentRoutes);
+router.use('/', virtualCardRoutes);
 
 export default router;

@@ -2,10 +2,14 @@ import mongoose from 'mongoose';
 import { Contract, CONTRACT_STATUSES } from '../models/Contract.js';
 import { Conversation } from '../models/Conversation.js';
 import { Milestone, MILESTONE_STATUSES } from '../models/Milestone.js';
+import { Payment } from '../models/Payment.js';
 import { Project } from '../models/Project.js';
 import { WorkSubmission, SUBMISSION_STATUSES } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
+import { config } from '../config/index.js';
+import { ESCROW_STATUS, PAYMENT_STATUS } from '../config/constants.js';
 import { notificationService } from './notification.service.js';
+import { publicPayment } from './payment.service.js';
 
 const USER_SELECT = 'name avatar role status';
 const JOB_SELECT = 'title status';
@@ -117,10 +121,28 @@ async function milestonesWithSubmissions(projectId) {
   return milestones.map((milestone) => ({ ...milestone, submissions: grouped.get(id(milestone)) || [] }));
 }
 
+function financialSummary(milestones, payments) {
+  const cents = (value) => Math.round(Number(value || 0) * 100);
+  const sum = (rows) => rows.reduce((total, row) => total + cents(row.amount), 0) / 100;
+  const funded = payments.filter((payment) => payment.status === PAYMENT_STATUS.SUCCEEDED);
+  const released = funded.filter((payment) => payment.escrowStatus === ESCROW_STATUS.RELEASED);
+  const total = sum(milestones);
+  const fundedTotal = sum(funded);
+  const releasedTotal = sum(released);
+  return {
+    currency: config.payment.currency,
+    total,
+    funded: fundedTotal,
+    escrow: Math.round((cents(fundedTotal) - cents(releasedTotal))) / 100,
+    released: releasedTotal,
+    remaining: Math.max(0, Math.round(cents(total) - cents(fundedTotal)) / 100),
+  };
+}
+
 async function reflectApprovedProgress(project, milestone, actor) {
   const [total, approved] = await Promise.all([
     Milestone.countDocuments({ project: project._id }),
-    Milestone.countDocuments({ project: project._id, status: MILESTONE_STATUSES.APPROVED }),
+    Milestone.countDocuments({ project: project._id, status: mongoose.trusted({ $in: [MILESTONE_STATUSES.APPROVED, MILESTONE_STATUSES.PAID] }) }),
   ]);
   if (total === 0) return;
   const target = Math.min(99, Math.round((approved / total) * 100));
@@ -260,7 +282,12 @@ export const projectService = {
       Conversation.findOne({ contextType: 'offer', contextId: project.offer }).select('_id'),
       milestonesWithSubmissions(project._id),
     ]);
-    return present(project, conversation?._id || null, milestones);
+    const payments = await Payment.find({ project: project._id }).sort({ createdAt: -1 });
+    return {
+      ...present(project, conversation?._id || null, milestones),
+      payments: payments.map(publicPayment),
+      financialSummary: financialSummary(milestones, payments),
+    };
   },
 
   async updateProgress(user, projectId, { progress, note }) {
@@ -299,11 +326,14 @@ export const projectService = {
   async startMilestone(user, projectId, milestoneId) {
     const { project, milestone, isFreelancer } = await milestoneActionContext(user, projectId, milestoneId);
     if (!isFreelancer) throw ApiError.forbidden('Only the freelancer can start a milestone');
-    if (milestone.status !== MILESTONE_STATUSES.PENDING) {
-      throw ApiError.badRequest('Only a pending milestone can be started');
+    if (milestone.status === MILESTONE_STATUSES.PENDING || milestone.status === MILESTONE_STATUSES.FUNDING_PENDING) {
+      throw ApiError.badRequest('The client must fund this milestone before work can start');
+    }
+    if (milestone.status !== MILESTONE_STATUSES.FUNDED) {
+      throw ApiError.badRequest('Only a funded milestone can be started');
     }
     const updated = await Milestone.findOneAndUpdate(
-      { _id: milestone._id, status: MILESTONE_STATUSES.PENDING },
+      { _id: milestone._id, status: MILESTONE_STATUSES.FUNDED },
       { $set: { status: MILESTONE_STATUSES.IN_PROGRESS, startedAt: new Date() } },
       { new: true, runValidators: true },
     );
