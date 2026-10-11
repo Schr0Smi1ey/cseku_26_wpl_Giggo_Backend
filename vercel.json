@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "installCommand": "npm install",
+  "buildCommand": "",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.js" }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "SERVE_STATIC": "false"
+  }
+}

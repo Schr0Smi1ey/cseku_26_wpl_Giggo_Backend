@@ -72,6 +72,7 @@ export const verificationService = {
 
   async submitRequest(user, { type, note }, files = []) {
     if (!files.length) throw ApiError.badRequest('Attach at least one supporting document');
+    if (files.reduce((total, file) => total + file.buffer.length, 0) > 3145728) throw ApiError.badRequest('Supporting documents must total 3 MB or less');
     const existing = await VerificationRequest.exists({ user: user._id, type, status: 'pending' });
     if (existing) throw ApiError.conflict(`You already have a pending ${type} request`);
 

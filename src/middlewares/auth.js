@@ -1,5 +1,6 @@
 import { ApiError } from '../utils/ApiError.js';
 import { syncSupabaseUser, verifySupabaseAccessToken } from '../services/supabase-auth.service.js';
+import { enforceSecuritySession } from '../services/security-session.service.js';
 
 export const requireAuth = async (req, _res, next) => {
   try {
@@ -9,6 +10,7 @@ export const requireAuth = async (req, _res, next) => {
     const identity = await verifySupabaseAccessToken(header.slice(7));
     req.user = await syncSupabaseUser(identity);
     req.authIdentity = identity;
+    await enforceSecuritySession(req, identity);
     next();
   } catch (error) {
     next(error);
@@ -24,6 +26,7 @@ export const optionalAuth = async (req, _res, next) => {
     const identity = await verifySupabaseAccessToken(header.slice(7));
     req.user = await syncSupabaseUser(identity);
     req.authIdentity = identity;
+    await enforceSecuritySession(req, identity);
     return next();
   } catch (error) { return next(error); }
 };

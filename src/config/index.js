@@ -9,7 +9,10 @@ function numberFromEnv(name, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
-const clientOrigins = (process.env.CLIENT_URL || 'http://localhost:5173,http://127.0.0.1:5173')
+// Capacitor Android uses http://localhost as its WebView origin. It is needed
+// only for USB/local development with `adb reverse tcp:5000 tcp:5000`.
+const defaultClientOrigins = 'http://localhost:5173,http://127.0.0.1:5173,http://localhost,capacitor://localhost,https://mymensingh-hi-school.web.app,https://mymensingh-hi-school.firebaseapp.com';
+const clientOrigins = `${process.env.CLIENT_URL || ''},${defaultClientOrigins},https://giggo-kucse.web.app,https://giggo-kucse.firebaseapp.com`
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -19,15 +22,16 @@ export const config = {
   isProduction,
   isTest,
   port: numberFromEnv('PORT', 5000),
+  host: process.env.HOST || '0.0.0.0',
   // Tests must never use the developer's configured Atlas database.
   mongoUri: isTest ? process.env.TEST_MONGODB_URI || '' : process.env.MONGODB_URI || '',
   mongoDbName: isTest ? undefined : process.env.MONGODB_DB_NAME || undefined,
   clientOrigins,
   bcryptCost: numberFromEnv('BCRYPT_COST', 12),
   storage: {
-    verificationMaxFileMb: numberFromEnv('VERIFICATION_MAX_FILE_MB', 5),
-    cvMaxFileMb: numberFromEnv('CV_MAX_FILE_MB', 10),
-    avatarMaxFileMb: numberFromEnv('AVATAR_MAX_FILE_MB', 5),
+    verificationMaxFileMb: Math.min(numberFromEnv('VERIFICATION_MAX_FILE_MB', 3), 3),
+    cvMaxFileMb: Math.min(numberFromEnv('CV_MAX_FILE_MB', 3), 3),
+    avatarMaxFileMb: Math.min(numberFromEnv('AVATAR_MAX_FILE_MB', 3), 3),
     avatarUploadDir: process.env.AVATAR_UPLOAD_DIR || '',
     avatarProvider: isTest ? 'local' : process.env.AVATAR_STORAGE_PROVIDER || (process.env.IMGBB_API_KEY ? 'imgbb' : 'local'),
     imgbbApiKey: process.env.IMGBB_API_KEY || '',

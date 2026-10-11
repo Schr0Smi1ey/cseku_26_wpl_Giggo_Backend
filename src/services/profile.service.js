@@ -7,6 +7,7 @@ import { FreelancerProfile } from '../models/FreelancerProfile.js';
 import { ROLES, User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { removeAvatarAsset, storeAvatar } from './avatar.storage.service.js';
+import { storePrivateUpload, removePrivateUpload } from './private-upload.storage.js';
 
 const freelancerFields = ['title', 'overview', 'category', 'hourlyRate', 'availability', 'skills', 'languages', 'location', 'links', 'education', 'experience', 'certifications', 'portfolio', 'visibility'];
 const clientFields = ['companyName', 'companyDescription', 'industry', 'website', 'teamSize', 'location'];
@@ -26,6 +27,7 @@ function isInsideCvDirectory(filePath) {
 }
 
 export async function removeCvFile(storageKey) {
+  if (String(storageKey || '').startsWith('supabase://')) return removePrivateUpload(storageKey);
   if (!storageKey || !isInsideCvDirectory(storageKey)) return;
   await fs.rm(storageKey, { force: true });
 }
@@ -137,9 +139,7 @@ export const profileService = {
 
     const { profile } = await getOrCreate(user);
     const root = cvDirectory();
-    const storageKey = path.join(root, `${user._id}-${crypto.randomUUID()}${extension}`);
-    await fs.mkdir(root, { recursive: true });
-    await fs.writeFile(storageKey, file.buffer, { flag: 'wx' });
+    const storageKey = await storePrivateUpload(file, { directory: root, folder: 'cv', owner: String(user._id), extension });
 
     const previousKey = profile.cv?.storageKey;
     profile.cv = {

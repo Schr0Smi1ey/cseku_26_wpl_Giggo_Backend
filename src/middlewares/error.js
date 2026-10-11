@@ -14,7 +14,7 @@ export function errorHandler(error, _req, res, _next) {
     return res.status(400).json({ success: false, message: 'Invalid request data', error: { code: 'VALIDATION_ERROR' } });
   }
   if (error?.code === 11000) {
-    return res.status(409).json({ success: false, message: 'Email is already registered', error: { code: 'CONFLICT' } });
+    return res.status(409).json({ success: false, message: error.keyPattern?.email ? 'Email is already registered' : 'This record already exists; refresh and retry', error: { code: 'CONFLICT' } });
   }
 
   const status = error instanceof ApiError ? error.status : 500;

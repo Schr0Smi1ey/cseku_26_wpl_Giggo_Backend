@@ -9,9 +9,11 @@
     "test": "node --test --test-concurrency=1",
     "bootstrap:admin": "node scripts/bootstrap-admin.js",
     "repair:offer-indexes": "node scripts/repair-offer-indexes.js",
+    "repair:payment-indexes": "node scripts/repair-payment-indexes.js",
     "migrate:offer-history": "node scripts/migrate-offer-history.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

@@ -106,6 +106,7 @@ async function ownedEntry(user, projectId, entryId) {
   const ctx = await context(user, projectId, { write: true });
   const entry = await TimeEntry.findOne({ _id: entryId, project: ctx.project._id, freelancer: user._id });
   if (!entry) throw ApiError.notFound('Time entry not found');
+  if (entry.invoice) throw ApiError.conflict('Invoiced time entries cannot be changed');
   if (entry.status === TIME_ENTRY_STATUSES.DELETED) throw ApiError.badRequest('This time entry has already been deleted');
   if (Date.now() - entry.endedAt.getTime() > EDIT_WINDOW_MS) {
     throw ApiError.badRequest('Time entries can only be changed within seven days');
@@ -342,7 +343,7 @@ export const timeTrackingService = {
     const minutes = durationMinutes(startedAt, endedAt);
     const nextRevision = entry.revision + 1;
     const updated = await TimeEntry.findOneAndUpdate(
-      { _id: entry._id, revision: entry.revision, status: TIME_ENTRY_STATUSES.COMPLETED },
+      { _id: entry._id, revision: entry.revision, status: TIME_ENTRY_STATUSES.COMPLETED, invoice: null },
       {
         $set: {
           startedAt,
@@ -372,7 +373,7 @@ export const timeTrackingService = {
     const nextRevision = entry.revision + 1;
     const now = new Date();
     const deleted = await TimeEntry.findOneAndUpdate(
-      { _id: entry._id, revision: entry.revision, status: TIME_ENTRY_STATUSES.COMPLETED },
+      { _id: entry._id, revision: entry.revision, status: TIME_ENTRY_STATUSES.COMPLETED, invoice: null },
       {
         $set: {
           status: TIME_ENTRY_STATUSES.DELETED,

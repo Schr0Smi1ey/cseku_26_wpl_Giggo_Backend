@@ -23,6 +23,13 @@ import { SavedMessage } from '../models/SavedMessage.js';
 import { ROLES, User } from '../models/User.js';
 import { VerificationRequest } from '../models/VerificationRequest.js';
 import { TimeEntry } from '../models/TimeEntry.js';
+import { HourlyInvoice } from '../models/HourlyInvoice.js';
+import { Review } from '../models/Review.js';
+import { Dispute, UserReport, AuditLog } from '../models/Moderation.js';
+import { Service, ServiceOrder } from '../models/Service.js';
+import { Agency, AgencyInvitation } from '../models/Agency.js';
+import { DiscoveryPreference } from '../models/DiscoveryPreference.js';
+import { SecuritySession, SecurityEvent } from '../models/SecuritySession.js';
 import { WorkSubmission } from '../models/WorkSubmission.js';
 import { ApiError } from '../utils/ApiError.js';
 import { removeAvatarAsset } from './avatar.storage.service.js';
@@ -49,6 +56,8 @@ export const accountDeletionService = {
     requireRecentAuthentication(identity);
     if (user.hasRole(ROLES.ADMIN)) throw ApiError.forbidden('Administrator accounts require a separate reviewed removal process');
     if (!user.supabaseUserId) throw ApiError.badRequest('This account is not linked to Supabase authentication');
+    if (await Agency.exists({ owner: user._id, 'members.1': mongoose.trusted({ $exists: true }) })) throw ApiError.conflict('Transfer agency ownership before deleting your account');
+    if (await ServiceOrder.exists({ $or: [{ buyer: user._id }, { seller: user._id }], status: mongoose.trusted({ $nin: ['completed', 'cancelled'] }) })) throw ApiError.conflict('Complete or cancel your service orders before deleting the account');
 
     const account = await User.findOneAndUpdate(
       { _id: user._id, status: 'active' },
@@ -98,6 +107,13 @@ export const accountDeletionService = {
       : { user: account._id };
 
     await Promise.all([
+      DiscoveryPreference.deleteMany({ user: account._id }),
+      SecuritySession.deleteMany({ user: account._id }),
+      SecurityEvent.deleteMany({ user: account._id }),
+      DiscoveryPreference.updateMany({}, { $pull: { savedFreelancers: account._id } }),
+      AgencyInvitation.deleteMany({ $or: [{ invitedUser: account._id }, { invitedBy: account._id }] }),
+      Agency.deleteMany({ owner: account._id }),
+      Agency.updateMany({ 'members.user': account._id, owner: mongoose.trusted({ $ne: account._id }) }, { $pull: { members: { user: account._id } }, $inc: { revision: 1 } }),
       AIAnalysis.deleteMany({ user: account._id }),
       AIUsage.deleteMany({ user: account._id }),
       ClientProfile.deleteMany({ user: account._id }),
@@ -121,6 +137,12 @@ export const accountDeletionService = {
       Offer.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
       ActiveTimer.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       TimeEntry.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
+      HourlyInvoice.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
+      Review.deleteMany({ $or: [{ author: account._id }, { subject: account._id }] }),
+      Service.deleteMany({ owner: account._id }),
+      ServiceOrder.deleteMany({ $or: [{ buyer: account._id }, { seller: account._id }] }),
+      Dispute.deleteMany({ contract: mongoose.trusted({ $in: relatedContractIds }) }),
+      UserReport.deleteMany({ $or: [{ reporter: account._id }, { targetType: 'user', target: account._id }] }),
       WorkSubmission.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       Milestone.deleteMany({ project: mongoose.trusted({ $in: relatedProjectIds }) }),
       Contract.deleteMany({ $or: [{ freelancer: account._id }, { client: account._id }] }),
@@ -142,6 +164,7 @@ export const accountDeletionService = {
       ),
     ]);
     await Notification.updateMany({ actor: account._id }, { $set: { actor: null } });
+    await AuditLog.updateMany({ actor: account._id }, { $set: { actor: null } });
     await User.deleteOne({ _id: account._id });
     clearVerificationStateForUser(account._id);
 

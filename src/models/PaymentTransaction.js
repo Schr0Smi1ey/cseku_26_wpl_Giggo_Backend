@@ -17,7 +17,7 @@ const schema = new Schema({
   currency: { type: String, uppercase: true, default: 'BDT' },
   paymentMethod: { type: String, index: true },
   provider: { type: String, enum: Object.values(SIMULATED_PROVIDER), required: true },
-  providerTransactionId: { type: String, unique: true, sparse: true, index: true },
+  providerTransactionId: { type: String },
   type: { type: String, enum: ['card_reload', 'client_payment', 'refund'], required: true },
   status: { type: String, enum: Object.values(SIMULATED_PAYMENT_STATUS), default: SIMULATED_PAYMENT_STATUS.PENDING, index: true },
   idempotencyKey: { type: String, unique: true, sparse: true, index: true },
@@ -25,4 +25,5 @@ const schema = new Schema({
   completedAt: Date,
 }, { timestamps: true });
 schema.index({ user: 1, createdAt: -1 });
+schema.index({ providerTransactionId: 1 }, { name: 'providerTransactionId_present_unique', unique: true, sparse: true });
 export const PaymentTransaction = mongoose.model('PaymentTransaction', schema);

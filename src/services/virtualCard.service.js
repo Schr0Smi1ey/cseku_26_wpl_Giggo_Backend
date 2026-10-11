@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import mongoose from 'mongoose';
 import { VirtualCard } from '../models/VirtualCard.js';
 import { PaymentTransaction } from '../models/PaymentTransaction.js';
 import { WalletLedgerEntry } from '../models/WalletLedgerEntry.js';
@@ -77,16 +78,34 @@ export const virtualCardService = {
     const card = await this.ensureForUser(user);
     if (!card) throw ApiError.forbidden('Only freelancers can reload a virtual card');
     if ([VIRTUAL_CARD_STATUS.SUSPENDED, VIRTUAL_CARD_STATUS.BLOCKED, VIRTUAL_CARD_STATUS.CANCELLED].includes(card.status)) throw ApiError.badRequest('Your card is not available for reload');
-    const prior = await PaymentTransaction.findOne({ idempotencyKey });
-    if (prior) return { payment: prior, card };
-    const payment = await PaymentTransaction.create({ transactionNumber: ref('PAY'), user: user._id, card: card._id, amount: Math.round(amount * 100) / 100, currency: card.currency, provider, providerTransactionId: ref('SIM'), type: 'card_reload', status: outcome === 'failed' ? SIMULATED_PAYMENT_STATUS.FAILED : SIMULATED_PAYMENT_STATUS.SUCCESS, idempotencyKey, metadata: { simulated: true }, completedAt: outcome === 'failed' ? undefined : new Date() });
-    if (payment.status === SIMULATED_PAYMENT_STATUS.FAILED) return { payment, card };
-    const before = card.balance;
-    card.balance += payment.amount;
-    if (card.status === VIRTUAL_CARD_STATUS.INACTIVE && card.balance >= card.activationMinimum) { card.status = VIRTUAL_CARD_STATUS.ACTIVE; card.activatedAt = card.activatedAt || new Date(); }
-    await card.save();
-    await WalletLedgerEntry.create({ entryNumber: ref('LED'), user: user._id, card: card._id, type: LEDGER_ENTRY_TYPE.CARD_RELOAD, direction: 'credit', amount: payment.amount, currency: card.currency, referenceType: 'PAYMENT', referenceId: payment._id, balanceAfter: card.balance, description: `${provider.replace('_SIMULATED', '')} simulated card reload` });
-    return { payment, card };
+    await PaymentTransaction.init();
+    let result;
+    const checkRetry = (prior) => {
+      if (String(prior.user) !== String(user._id) || prior.type !== 'card_reload' || prior.amount !== Math.round(amount * 100) / 100 || prior.provider !== provider) throw ApiError.conflict('Request key is already in use for a different payment');
+    };
+    try {
+      await mongoose.connection.transaction(async (session) => {
+        const prior = await PaymentTransaction.findOne({ idempotencyKey }).session(session);
+        const current = await VirtualCard.findById(card._id).session(session);
+        if (prior) { checkRetry(prior); result = { payment: prior, card: current }; return; }
+        if ([VIRTUAL_CARD_STATUS.SUSPENDED, VIRTUAL_CARD_STATUS.BLOCKED, VIRTUAL_CARD_STATUS.CANCELLED].includes(current.status)) throw ApiError.badRequest('Your card is not available for reload');
+        const [payment] = await PaymentTransaction.create([{ transactionNumber: ref('PAY'), user: user._id, card: current._id, amount: Math.round(amount * 100) / 100, currency: current.currency, provider, providerTransactionId: ref('SIM'), type: 'card_reload', status: outcome === 'failed' ? SIMULATED_PAYMENT_STATUS.FAILED : SIMULATED_PAYMENT_STATUS.SUCCESS, idempotencyKey, metadata: { simulated: true }, completedAt: outcome === 'failed' ? undefined : new Date() }], { session });
+        if (payment.status === SIMULATED_PAYMENT_STATUS.SUCCESS) {
+          current.balance = Math.round((current.balance + payment.amount) * 100) / 100;
+          if (current.status === VIRTUAL_CARD_STATUS.INACTIVE && current.balance >= current.activationMinimum) { current.status = VIRTUAL_CARD_STATUS.ACTIVE; current.activatedAt ||= new Date(); }
+          await current.save({ session });
+          await WalletLedgerEntry.create([{ entryNumber: ref('LED'), user: user._id, card: current._id, type: LEDGER_ENTRY_TYPE.CARD_RELOAD, direction: 'credit', amount: payment.amount, currency: current.currency, referenceType: 'PAYMENT', referenceId: payment._id, balanceAfter: current.balance, description: `${provider.replace('_SIMULATED', '')} simulated card reload` }], { session });
+        }
+        result = { payment, card: current };
+      });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      const prior = await PaymentTransaction.findOne({ idempotencyKey });
+      if (!prior) throw error;
+      checkRetry(prior);
+      result = { payment: prior, card: await VirtualCard.findById(card._id) };
+    }
+    return result;
   },
 
   async transactions(user) {
@@ -102,10 +121,15 @@ export const virtualCardService = {
 
   async debitForEscrow(userId, amount, referenceId, metadata = {}, session = null) {
     const card = await VirtualCard.findOne({ user: userId }).session(session);
-    if (!card) return null;
+    if (!card) throw ApiError.badRequest('A virtual card is required to fund escrow');
     const debit = Math.round(Number(amount) * 100) / 100;
+    if (!Number.isFinite(debit) || debit <= 0) throw ApiError.badRequest('Escrow amount must be greater than zero');
+    if (card.balance < debit) throw ApiError.badRequest('Insufficient virtual card balance to fund this milestone');
+    if ([VIRTUAL_CARD_STATUS.SUSPENDED, VIRTUAL_CARD_STATUS.BLOCKED, VIRTUAL_CARD_STATUS.CANCELLED].includes(card.status)) {
+      throw ApiError.badRequest('Your virtual card is not available for escrow funding');
+    }
     const before = card.balance;
-    card.balance = Math.max(0, Math.round((card.balance - debit) * 100) / 100);
+    card.balance = Math.round((card.balance - debit) * 100) / 100;
     card.heldBalance = Math.round((card.heldBalance + debit) * 100) / 100;
     await card.save({ session });
     const [entry] = await WalletLedgerEntry.create([{ entryNumber: ref('LED'), user: userId, card: card._id, type: LEDGER_ENTRY_TYPE.CLIENT_PAYMENT, direction: 'debit', amount: debit, currency: card.currency, referenceType: 'ESCROW_FUNDING', referenceId, balanceAfter: card.balance, description: 'Client payment moved into milestone escrow', metadata: { ...metadata, balanceBefore: before, heldBalance: card.heldBalance } }], { session });
@@ -114,9 +138,10 @@ export const virtualCardService = {
 
   async releaseEscrow(userId, amount, referenceId, metadata = {}, session = null) {
     const card = await VirtualCard.findOne({ user: userId }).session(session);
-    if (!card) return null;
+    if (!card) throw ApiError.conflict('Escrow wallet is missing; reconciliation is required');
     const value = Math.round(Number(amount) * 100) / 100;
-    card.heldBalance = Math.max(0, Math.round((card.heldBalance - value) * 100) / 100);
+    if (!Number.isFinite(value) || value <= 0 || Math.round(card.heldBalance * 100) < Math.round(value * 100)) throw ApiError.conflict('Escrow balance requires reconciliation');
+    card.heldBalance = Math.round((card.heldBalance - value) * 100) / 100;
     await card.save({ session });
     return card;
   },

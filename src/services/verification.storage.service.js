@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { ApiError } from '../utils/ApiError.js';
+import { storePrivateUpload, removePrivateUpload } from './private-upload.storage.js';
 
 const documentsDirectory = path.resolve(config.storage.uploadDir || path.join(process.cwd(), '.runtime', 'uploads', 'verification'));
 
@@ -17,18 +18,17 @@ function isInsideDocumentsDirectory(filePath) {
 }
 
 export async function storeVerificationDocument(file) {
-  await fs.mkdir(documentsDirectory, { recursive: true });
-  const destination = path.join(documentsDirectory, `${crypto.randomUUID()}${extension(file.originalname)}`);
-  await fs.writeFile(destination, file.buffer, { flag: 'wx' });
-  return destination;
+  return storePrivateUpload(file, { directory: documentsDirectory, folder: 'verification', extension: extension(file.originalname) });
 }
 
 export async function removeVerificationDocument(filePath) {
+  if (String(filePath || '').startsWith('supabase://')) return removePrivateUpload(filePath);
   if (!filePath || !isInsideDocumentsDirectory(filePath)) return;
   await fs.rm(filePath, { force: true });
 }
 
 export async function readVerificationDocument(filePath) {
+  if (String(filePath || '').startsWith('supabase://')) return filePath;
   if (!filePath || !isInsideDocumentsDirectory(filePath)) throw ApiError.notFound('Document not found');
   try {
     await fs.access(filePath);

@@ -1,6 +1,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ok } from '../utils/response.js';
 import { verificationService } from '../services/verification.service.js';
+import { readPrivateUpload } from '../services/private-upload.storage.js';
 
 export const verificationController = {
   status: asyncHandler(async (req, res) => ok(res, await verificationService.getStatus(req.user))),
@@ -32,6 +33,8 @@ export const verificationController = {
   adminDocument: asyncHandler(async (req, res) => {
     const { document, path } = await verificationService.adminDocument(req.params.id, req.params.index);
     res.type(document.mimeType);
-    return res.download(path, document.filename);
+    res.set('Cache-Control', 'no-store');
+    res.attachment(document.filename);
+    return res.send(await readPrivateUpload(path));
   }),
 };

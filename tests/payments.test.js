@@ -82,6 +82,8 @@ async function acceptedProject(suffix) {
   const freelancerToken = tokenFor(`pay-freelancer-${suffix}`, 'freelancer');
   const otherClientToken = tokenFor(`pay-other-${suffix}`, 'client');
   await request(app).get('/api/auth/me').set(auth(otherClientToken)).expect(200);
+  // Clients load the same wallet that will be debited into milestone escrow.
+  await reload(clientToken, `client-funds-${suffix}`, { amount: 1200, provider: 'BKASH_SIMULATED' }).expect(201);
   await activateCard(freelancerToken, `activate-${suffix}`);
   const job = (await request(app).post('/api/jobs').set(auth(clientToken)).send(jobBody).expect(201)).body.data.job;
   const proposal = (await request(app).post('/api/proposals').set(auth(freelancerToken)).send({ job: job._id, ...proposalBody }).expect(201)).body.data.proposal;
@@ -142,10 +144,11 @@ test('virtual card starts inactive and masked, reloads idempotently and activate
   assert.equal((await request(app).post('/api/cards/unfreeze').set(auth(token)).expect(200)).body.data.card.status, 'active');
 });
 
-test('card reload is developer-only and proposals require an active card', async () => {
+test('clients and freelancers can reload cards, while only freelancers need an active card for proposals', async () => {
   const clientToken = tokenFor('card-client', 'client');
   const freelancerToken = tokenFor('card-gate', 'freelancer');
-  await request(app).post('/api/wallet/reload').set(auth(clientToken)).set('Idempotency-Key', 'c-1').send({ amount: 500, provider: 'BKASH_SIMULATED' }).expect(403);
+  const clientReload = (await request(app).post('/api/wallet/reload').set(auth(clientToken)).set('Idempotency-Key', 'c-1').send({ amount: 500, provider: 'BKASH_SIMULATED' }).expect(201)).body.data;
+  assert.equal(clientReload.card.balance, 500);
   await request(app).get('/api/developers/me/eligibility').set(auth(clientToken)).expect(403);
   await request(app).get('/api/cards/me').expect(401);
 

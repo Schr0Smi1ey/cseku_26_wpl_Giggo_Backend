@@ -41,6 +41,7 @@ const timeEntrySchema = new Schema(
     contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true, index: true },
     project: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
     timer: { type: Schema.Types.ObjectId, ref: 'ActiveTimer', default: null },
+    invoice: { type: Schema.Types.ObjectId, ref: 'HourlyInvoice', default: null },
     startedAt: { type: Date, required: true },
     endedAt: { type: Date, required: true },
     durationMinutes: { type: Number, required: true, min: 1, max: 720 },

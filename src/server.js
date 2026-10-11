@@ -10,7 +10,7 @@ async function start() {
   const server = http.createServer(createApp());
   const io = createRealtimeServer(server);
   const stopPaymentWorker = startPaymentWorker();
-  server.listen(config.port, () => console.log(`Giggo API listening on http://localhost:${config.port}`));
+  server.listen(config.port, config.host, () => console.log(`Giggo API listening on http://${config.host}:${config.port}`));
 
   const shutdown = async () => {
     stopPaymentWorker();

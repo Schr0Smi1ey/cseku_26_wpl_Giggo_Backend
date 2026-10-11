@@ -19,7 +19,9 @@ router.post('/cards/unfreeze', requireAuth, c.unfreeze);
 router.get('/cards/me/transactions', requireAuth, c.transactions);
 router.get('/wallet/me', requireAuth, c.wallet);
 router.get('/wallet/ledger', requireAuth, c.transactions);
-router.post('/wallet/reload', requireAuth, requireDeveloperCard, validate(reloadSchema), c.reload);
+// Clients use the same simulated wallet to fund escrow.  Work eligibility is
+// still freelancer-only, but a client must be able to load their own card.
+router.post('/wallet/reload', requireAuth, validate(reloadSchema), c.reload);
 router.get('/developers/me/eligibility', requireAuth, requireDeveloperCard, c.eligibility);
 
 export default router;

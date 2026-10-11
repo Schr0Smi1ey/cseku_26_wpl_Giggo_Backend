@@ -1,0 +1,15 @@
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+const objectId = Schema.Types.ObjectId;
+const auditSchema = new Schema({ actor: { type: objectId, ref: 'User', required: true }, action: { type: String, required: true }, entityType: String, entity: objectId, reason: { type: String, required: true, maxlength: 2000 }, before: String, after: String }, { timestamps: { createdAt: true, updatedAt: false }, versionKey: false });
+auditSchema.index({ createdAt: -1 });
+export const AuditLog = mongoose.model('AuditLog', auditSchema);
+const reportSchema = new Schema({ reporter: { type: objectId, ref: 'User', required: true }, targetType: { type: String, enum: ['user', 'job', 'review'], required: true }, target: { type: objectId, required: true }, reason: { type: String, required: true, maxlength: 2000 }, status: { type: String, enum: ['open', 'dismissed', 'actioned', 'appealed', 'reversed'], default: 'open' }, revision: { type: Number, default: 1 }, history: [{ actor: { type: objectId, ref: 'User' }, action: String, reason: String, at: { type: Date, default: Date.now } }] }, { timestamps: true });
+reportSchema.index({ reporter: 1, targetType: 1, target: 1 }, { unique: true });
+reportSchema.index({ status: 1, createdAt: -1 });
+export const UserReport = mongoose.model('UserReport', reportSchema);
+const disputeSchema = new Schema({ contract: { type: objectId, ref: 'Contract', required: true, unique: true }, client: { type: objectId, ref: 'User', required: true }, freelancer: { type: objectId, ref: 'User', required: true }, openedBy: { type: objectId, ref: 'User', required: true }, reason: { type: String, required: true, maxlength: 2000 }, status: { type: String, enum: ['open', 'under_review', 'resolved'], default: 'open' }, revision: { type: Number, default: 1 }, resolution: { type: String, default: '', maxlength: 2000 }, entries: [{ actor: { type: objectId, ref: 'User' }, text: { type: String, maxlength: 2000 }, links: [String], at: { type: Date, default: Date.now } }], history: [{ actor: { type: objectId, ref: 'User' }, status: String, reason: String, at: { type: Date, default: Date.now } }] }, { timestamps: true });
+disputeSchema.index({ client: 1, createdAt: -1 });
+disputeSchema.index({ freelancer: 1, createdAt: -1 });
+disputeSchema.index({ status: 1, createdAt: -1 });
+export const Dispute = mongoose.model('Dispute', disputeSchema);

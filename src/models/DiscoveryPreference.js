@@ -1,0 +1,4 @@
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+const schema = new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true }, locale: { type: String, default: 'en-BD' }, timezone: { type: String, default: 'Asia/Dhaka' }, region: { type: String, default: 'BD' }, currency: { type: String, enum: ['BDT', 'USD', 'EUR', 'GBP'], default: 'BDT' }, historyEnabled: { type: Boolean, default: false }, recommendationsEnabled: { type: Boolean, default: true }, savedFreelancers: [{ type: Schema.Types.ObjectId, ref: 'User' }], savedSearches: [{ name: String, query: String, kind: { type: String, enum: ['jobs', 'freelancers', 'services', 'agencies'] } }], history: [{ query: String, kind: String, at: { type: Date, default: Date.now } }] }, { timestamps: true });
+export const DiscoveryPreference = mongoose.model('DiscoveryPreference', schema);

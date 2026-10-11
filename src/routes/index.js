@@ -12,6 +12,15 @@ import contractRoutes from './contract.routes.js';
 import projectRoutes from './project.routes.js';
 import paymentRoutes from './payment.routes.js';
 import virtualCardRoutes from './virtualCard.routes.js';
+import reviewRoutes from './review.routes.js';
+import moderationRoutes from './moderation.routes.js';
+import adminRoutes from './admin.routes.js';
+import serviceRoutes from './service.routes.js';
+import agencyRoutes from './agency.routes.js';
+import discoveryRoutes from './discovery.routes.js';
+import financeRoutes from './finance.routes.js';
+import securityRoutes from './security.routes.js';
+import dashboardRoutes from './dashboard.routes.js';
 
 const router = Router();
 
@@ -27,6 +36,15 @@ router.use('/conversations', conversationRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/contracts', contractRoutes);
 router.use('/projects', projectRoutes);
+router.use('/reviews', reviewRoutes);
+router.use('/services', serviceRoutes);
+router.use('/agencies', agencyRoutes);
+router.use('/discovery', discoveryRoutes);
+router.use('/finance', financeRoutes);
+router.use('/security', securityRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/', moderationRoutes);
+router.use('/admin', adminRoutes);
 router.use('/', paymentRoutes);
 router.use('/', virtualCardRoutes);
 

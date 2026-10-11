@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 import { ApiError } from './ApiError.js';
+import { readPrivateUpload } from '../services/private-upload.storage.js';
 
 const MAX_TEXT_LENGTH = 100000;
 
@@ -10,13 +10,16 @@ function cleanText(value) {
 }
 
 export async function extractCvText(storageKey, mimeType) {
-  const buffer = await fs.readFile(storageKey);
+  const buffer = await readPrivateUpload(storageKey);
   let text = '';
 
   try {
     if (mimeType === 'text/plain') {
       text = buffer.toString('utf8');
     } else if (mimeType === 'application/pdf') {
+      // Load the native PDF runtime only when parsing a PDF, so optional
+      // rendering dependencies cannot prevent authentication from starting.
+      const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: buffer });
       try {
         text = (await parser.getText()).text || '';

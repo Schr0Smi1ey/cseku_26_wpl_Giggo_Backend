@@ -21,5 +21,11 @@ test('clients can post and manage jobs while freelancers can save public jobs', 
   await request(app).get('/api/jobs').expect(200).expect((res) => assert.equal(res.body.data.items.length, 1));
   await request(app).post(`/api/jobs/${id}/save`).set('Authorization', `Bearer ${freelancer}`).expect(200);
   await request(app).get('/api/jobs/saved').set('Authorization', `Bearer ${freelancer}`).expect(200).expect((res) => assert.equal(res.body.data.items[0]._id, id));
+  assert.equal((await Job.findById(id)).savedCount, 1);
+  await request(app).delete(`/api/jobs/${id}/save`).set('Authorization', `Bearer ${freelancer}`).expect(200);
+  assert.equal(await SavedJob.countDocuments({ job: id }), 0);
+  assert.equal((await Job.findById(id)).savedCount, 0);
+  await request(app).delete(`/api/jobs/${id}/save`).set('Authorization', `Bearer ${freelancer}`).expect(200);
+  assert.equal((await Job.findById(id)).savedCount, 0);
   await request(app).patch(`/api/jobs/${id}`).set('Authorization', `Bearer ${freelancer}`).send({ title: 'Nope' }).expect(403);
 });

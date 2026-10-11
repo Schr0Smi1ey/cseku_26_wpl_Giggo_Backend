@@ -1,0 +1,11 @@
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+const schema = new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, sessionHash: { type: String, required: true, select: false }, device: { type: String, maxlength: 80, required: true }, createdAt: { type: Date, default: Date.now }, lastSeenAt: { type: Date, default: Date.now }, revokedAt: Date, expiresAt: { type: Date, required: true } }, { versionKey: false });
+schema.index({ user: 1, sessionHash: 1 }, { unique: true });
+schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+schema.index({ user: 1, lastSeenAt: -1 });
+export const SecuritySession = mongoose.model('SecuritySession', schema);
+const events = new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, type: { type: String, enum: ['new_session', 'session_revoked'], required: true }, device: { type: String, maxlength: 80 }, at: { type: Date, default: Date.now }, expiresAt: { type: Date, required: true } }, { versionKey: false });
+events.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+events.index({ user: 1, at: -1 });
+export const SecurityEvent = mongoose.model('SecurityEvent', events);

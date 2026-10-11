@@ -37,6 +37,7 @@ function identityFromClaims(payload) {
     name: normalizeString(metadata.name, 100) || email.split('@')[0],
     role: requestedRole(metadata),
     issuedAt,
+    sessionId: normalizeString(payload.session_id, 100),
   };
 }
 

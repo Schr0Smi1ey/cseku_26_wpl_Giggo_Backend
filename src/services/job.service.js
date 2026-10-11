@@ -125,6 +125,12 @@ export const jobService = {
     return { deleted: true };
   },
   async save(user, id) { const job = await Job.findOne({ _id: id, status: 'open' }); if (!job) throw ApiError.notFound('Job not found'); const existing = await SavedJob.findOne({ user: user._id, job: id }); if (!existing) { await SavedJob.create({ user: user._id, job: id }); await Job.updateOne({ _id: id }, { $inc: { savedCount: 1 } }); } return { saved: true }; },
-  async unsave(user, id) { const removed = await SavedJob.findOneAndDelete({ user: user._id, job: id }); if (removed) await Job.updateOne({ _id: id, savedCount: { $gt: 0 } }, { $inc: { savedCount: -1 } }); return { saved: false }; },
+  async unsave(user, id) {
+    await mongoose.connection.transaction(async (session) => {
+      const removed = await SavedJob.findOneAndDelete({ user: user._id, job: id }).session(session);
+      if (removed) await Job.updateOne({ _id: id, savedCount: mongoose.trusted({ $gt: 0 }) }, { $inc: { savedCount: -1 } }, { session });
+    });
+    return { saved: false };
+  },
   async saved(user, filters) { const where = { user: user._id }; const rows = await SavedJob.find(where).sort({ createdAt: -1 }).skip(((filters.page || 1) - 1) * (filters.limit || 20)).limit(filters.limit || 20).populate({ path: 'job', populate: { path: 'client', select: clientSelect } }); const total = await SavedJob.countDocuments(where); const items = rows.map((row) => row.job).filter(Boolean); return { items, pagination: { page: filters.page || 1, limit: filters.limit || 20, total, totalPages: Math.max(1, Math.ceil(total / (filters.limit || 20))) } }; },
 };

@@ -1,0 +1,10 @@
+import mongoose from 'mongoose';
+const { Schema } = mongoose;
+const schema = new Schema({ owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true }, name: { type: String, required: true, maxlength: 120 }, description: { type: String, required: true, maxlength: 5000 }, skills: [String], country: { type: String, maxlength: 80 }, website: { type: String, maxlength: 500 }, visibility: { type: String, enum: ['public', 'private'], default: 'private' }, revision: { type: Number, default: 1 }, members: [{ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, role: { type: String, enum: ['owner', 'manager', 'member'], required: true }, joinedAt: { type: Date, default: Date.now } }] }, { timestamps: true });
+schema.index({ 'members.user': 1 });
+schema.index({ visibility: 1, createdAt: -1 });
+export const Agency = mongoose.model('Agency', schema);
+const invitationSchema = new Schema({ agency: { type: Schema.Types.ObjectId, ref: 'Agency', required: true }, invitedUser: { type: Schema.Types.ObjectId, ref: 'User', required: true }, invitedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }, role: { type: String, enum: ['manager', 'member'], default: 'member' }, status: { type: String, enum: ['pending', 'accepted', 'declined', 'revoked'], default: 'pending' }, expiresAt: { type: Date, required: true }, respondedAt: Date }, { timestamps: true });
+invitationSchema.index({ agency: 1, invitedUser: 1 }, { unique: true });
+invitationSchema.index({ invitedUser: 1, status: 1 });
+export const AgencyInvitation = mongoose.model('AgencyInvitation', invitationSchema);

@@ -18,7 +18,7 @@ export async function connectDB() {
   if (config.isProduction) throw new Error('MONGODB_URI is required in production.');
 
   // A replica set is required for the multi-document transactions used by escrow payments.
-  memoryServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  memoryServer = await MongoMemoryReplSet.create({ replSet: { count: 1 }, instanceOpts: [{ launchTimeout: 120000 }] });
   await mongoose.connect(memoryServer.getUri(), { serverSelectionTimeoutMS: 10000 });
   return mongoose.connection;
 }

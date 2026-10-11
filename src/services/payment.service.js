@@ -11,6 +11,7 @@ import { Project } from '../models/Project.js';
 import { Transaction } from '../models/Transaction.js';
 import { User } from '../models/User.js';
 import { Wallet } from '../models/Wallet.js';
+import { VirtualCard } from '../models/VirtualCard.js';
 import { ApiError } from '../utils/ApiError.js';
 import { notificationService } from './notification.service.js';
 import { emitToUser } from './realtime.service.js';
@@ -52,7 +53,9 @@ export const paymentService = {
     if (!idempotencyKey || idempotencyKey.length > 180) throw ApiError.badRequest('A valid Idempotency-Key is required');
     if (!providers.has(provider)) throw ApiError.badRequest('Unsupported payment method');
     if (!['success', 'failed'].includes(outcome) || (config.isProduction && outcome !== 'success')) throw ApiError.badRequest('Invalid simulation outcome');
-    // Provision the client's own card before escrow debits so card and ledger stay synchronized.
+    // The client wallet is the source of escrow funds. Validate it before a
+    // payment attempt is created so a payment can never settle into a negative
+    // balance or an unfunded escrow state.
     await virtualCardService.ensureForUser(actor);
     let result;
     try {
@@ -79,6 +82,11 @@ export const paymentService = {
         const gross = cents(milestone.amount);
         const fees = fee(milestone.amount);
         if (!Number.isSafeInteger(gross) || gross <= 0 || fees > gross) throw ApiError.badRequest('Invalid milestone amount or fees');
+        const fundingCard = await VirtualCard.findOne({ user: actor._id }).session(session);
+        if (!fundingCard || cents(fundingCard.balance) < gross) {
+          throw ApiError.badRequest(`Insufficient virtual card balance. Reload at least ${gross / 100} ${fundingCard?.currency || config.payment.currency} before funding this milestone.`);
+        }
+        if (["suspended", "blocked", "cancelled"].includes(fundingCard.status)) throw ApiError.badRequest('Your virtual card is not available for escrow funding');
         const intent = await getPaymentProvider().createPaymentIntent({ amount: gross, currency: config.payment.currency, metadata: { milestone: sid(milestone._id) } });
         const values = {
           transactionReference: ref(),
@@ -152,8 +160,9 @@ export const paymentService = {
   },
 
   // Advances queued simulated payments: checkout -> processing -> succeeded/failed.
-  async processPending() {
+  async processPending(user = null) {
     const pending = await Payment.find({
+      ...(user ? { $or: [{ client: user._id }, { freelancer: user._id }] } : {}),
       status: mongoose.trusted({ $in: [PAYMENT_STATUS.CHECKOUT_CREATED, PAYMENT_STATUS.PROCESSING] }),
       processAfter: mongoose.trusted({ $lte: new Date() }),
     }).select('_id').limit(50);
@@ -207,6 +216,9 @@ export const paymentService = {
   },
 
   async list(user) {
+    // Serverless requests cannot rely on a persistent background interval.
+    // Participant polling advances only that participant's due simulations.
+    await this.processPending(user);
     return Payment.find({ $or: [{ client: user._id }, { freelancer: user._id }] })
       .select('-metadata -providerPaymentId -idempotencyKey -freelancerAmount')
       .populate('contract milestone', 'title')
@@ -215,6 +227,8 @@ export const paymentService = {
   },
 
   async getOne(user, paymentId) {
+    await accessPayment(user, paymentId);
+    await this.processPending(user);
     const payment = await accessPayment(user, paymentId);
     await payment.populate('contract milestone', 'title');
     await payment.populate('freelancer', 'name');
